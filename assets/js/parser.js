@@ -169,7 +169,17 @@ function formatarLinha1EnderecoImovel({ logradouro, numero, complemento, bairro 
   return [logradouroNumero, complemento, bairro].filter(Boolean).join(' - ') || null;
 }
 
-const CAMPOS_REGRA_FIXA = ['chkir1', 'text_irano1', 'text_irexerc1', 'chkir2', 'text_irano2', 'text_irexerc2'];
+const CAMPOS_REGRA_FIXA = [
+  'chkir1', 'text_irano1', 'text_irexerc1', 'chkir2', 'text_irano2', 'text_irexerc2',
+  // Modalidade/enquadramento: o Espelho da Proposta é a fonte mais confiável pra esses campos (é
+  // o documento oficial da operação). Ficam na lista de "regra fixa" pra sempre valerem o que o
+  // Espelho encontrar, mesmo que outro documento da fila (ex.: cadastro/RG, que às vezes tem texto
+  // de instrução/boilerplate parecido) tenha marcado uma opção diferente antes dele na fila.
+  'chkmodalidade1', 'text_enquad1', 'chkmodalidade2', 'text_enquad2', 'chkmodalidade3', 'text_enquad3',
+  'chkmodalidade4', 'text_enquad4', 'chkmodalidade5', 'text_enquad5', 'chkmodalidade6', 'text_enquad6',
+  'chkmodalidade7', 'text_enquad7',
+  'chkenquadramento1', 'chkenquadramento2', 'chkenquadramento3', 'chkenquadramento4', 'chkenquadramento5', 'chkenquadramento6',
+];
 
 // -------------------------------------------------------------------------------------------
 // ESPELHO DA PROPOSTA (SIOPI) — documento de tabela "rótulo / valor" (Nº da Proposta, dados do
@@ -282,6 +292,12 @@ function extrairCamposDoEspelho(texto) {
       if (municipioProponente) encontrados.text_localocupa = municipioProponente;
       if (ufProponente) encontrados.text_uf0 = ufProponente;
     }
+
+    // "Possui conta no FGTS há mais de 03 anos..." do Espelho = "Possuo 36 meses de trabalho sob
+    // o regime do FGTS" da DAMP (mesma coisa: 3 anos = 36 meses). Sim -> sn_1, Não -> sn_2.
+    const possui3Anos = buscarSimNao(secaoProponente, 'Possui\\s+conta\\s+no\\s+FGTS\\s+h[áa]\\s+mais\\s+de\\s+03\\s+anos[^\\n]*?:?', 70);
+    if (possui3Anos === 'sim') encontrados.sn_1 = true;
+    else if (possui3Anos === 'nao') encontrados.sn_2 = true;
   }
 
   // ---- 3 - IMÓVEL (3.1 Identificação + 3.2 Dados do Imóvel) ----
@@ -321,18 +337,34 @@ function extrairCamposDoEspelho(texto) {
     encontrados[modalidadeEncontrada.chk] = true;
     // O valor que acompanha a modalidade é o "Valor Compra e Venda ou Orçamento Proposto pelo
     // Cliente" (seção 5.3) — não o "Valor Financiamento Negociado" (esse é só a parte financiada,
-    // menor que o valor total do imóvel quando há entrada/recursos próprios).
-    const valorCompraEVenda = buscarAposRotulo(
-      texto,
-      'Valor\\s+Compra\\s+e\\s+Venda\\s+ou\\s+Or[çc]amento\\s+Proposto\\s+pelo\\s+Cliente\\s*:?',
-      /R?\$?\s*([\d.]{1,15},\d{2})/,
-      60,
-    );
-    if (valorCompraEVenda) encontrados[modalidadeEncontrada.valor] = valorCompraEVenda.replace(/^R\$?\s*/, '');
+    // menor que o valor total do imóvel quando há entrada/recursos próprios). Busca "na mão" (em
+    // vez de buscarAposRotulo) por dois motivos: 1) o OCR às vezes troca a vírgula decimal por
+    // ponto ("432.600.00" em vez de "432.600,00"), então aceita os dois formatos; 2) se esse rótulo
+    // não tiver valor logo em seguida (célula vazia na tabela), a janela de busca pode "vazar" e
+    // pegar o número do campo vizinho "Valor Financiamento Negociado" — por isso, se a palavra
+    // "Financiamento" aparecer ANTES de qualquer número dentro da janela, descarta (fica em branco
+    // de propósito, em vez de preencher com o valor errado).
+    const rotuloCompraEVenda = /Valor\s+Compra\s+e\s+Venda\s+ou\s+Or[çc]amento\s+Proposto\s+pelo\s+Cliente\s*:?/i;
+    const matchRotulo = rotuloCompraEVenda.exec(texto);
+    if (matchRotulo) {
+      const janela = texto.slice(matchRotulo.index + matchRotulo[0].length, matchRotulo.index + matchRotulo[0].length + 40);
+      const valorMatch = janela.match(/R?\$?\s*(\d[\d.,]{3,17}\d)/);
+      const antesDoValor = valorMatch ? janela.slice(0, valorMatch.index) : '';
+      if (valorMatch && !/Financiamento/i.test(antesDoValor)) {
+        // Normaliza pro formato "1.234,56": remove tudo que não é dígito nem separador, garante
+        // que os 2 últimos dígitos viram a parte decimal (","), e o resto vira separador de milhar (".").
+        const digitosEDecimais = valorMatch[1].replace(/[.,]/g, '');
+        const parteInteira = digitosEDecimais.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        const parteDecimal = digitosEDecimais.slice(-2);
+        encontrados[modalidadeEncontrada.valor] = `${parteInteira || '0'},${parteDecimal}`;
+      }
+    }
   }
 
-  // CCFGTS aparece tanto em "Tipo de Financiamento" quanto em "Item de Produto"
-  if (/CCFGTS/i.test(texto)) encontrados.chkenquadramento1 = true;
+  // Regra de negócio: pra todo Espelho da Proposta processado aqui, o enquadramento é sempre a
+  // 1ª opção ("CARTA DE CRÉDITO FGTS – CCFGTS/PMCMV OU CCFGTS-OPERAÇÕES ESPECIAIS") — não depende
+  // de achar "CCFGTS" no OCR (esse texto é obrigatório em todos os casos deste fluxo).
+  encontrados.chkenquadramento1 = true;
 
   // Nº OPERAÇÃO (aba "Contas FGTS" da DAMP) — só preenche quando o próprio Espelho traz o campo
   // homônimo preenchido; quando vier em branco (comum), o campo é deixado em aberto de propósito
@@ -619,6 +651,11 @@ async function analisarArquivo(arquivo, aoProgredir) {
     }
   } finally {
     await worker.terminate();
+    // Log de depuração: mostra no console (F12) o texto exatamente como o OCR reconheceu e o que
+    // foi extraído dele. Ajuda a diagnosticar por que um campo saiu errado ou em branco — o rótulo
+    // pode ter sido lido de um jeito diferente do esperado.
+    console.log(`[OCR] Texto reconhecido de "${arquivo.name}":\n${textoAcumulado}`);
+    console.log(`[OCR] Campos extraídos de "${arquivo.name}":`, encontrados);
   }
 
   return encontrados;
@@ -628,6 +665,17 @@ async function analisarArquivo(arquivo, aoProgredir) {
 // paralelo). Os campos identificados em cada arquivo são agregados aos anteriores SEM sobrescrever
 // o que um arquivo anterior da fila já tiver identificado — exceto os campos de regra fixa
 // (IR ano base/exercício), recalculados a cada arquivo mas sempre com o mesmo valor final.
+// Grupos onde só UMA opção pode ficar marcada (checkboxes mutuamente exclusivos do documento
+// oficial). Quando um arquivo da fila encontra uma opção de um desses grupos, qualquer opção de
+// outro arquivo anterior da fila do MESMO grupo é descartada — senão duas chaves diferentes (ex.:
+// chkmodalidade1 de um arquivo e chkmodalidade2 de outro) ficariam as duas marcadas ao mesmo tempo.
+const GRUPOS_EXCLUSIVOS = [
+  ['chkmodalidade1', 'text_enquad1', 'chkmodalidade2', 'text_enquad2', 'chkmodalidade3', 'text_enquad3',
+    'chkmodalidade4', 'text_enquad4', 'chkmodalidade5', 'text_enquad5', 'chkmodalidade6', 'text_enquad6',
+    'chkmodalidade7', 'text_enquad7'],
+  ['chkenquadramento1', 'chkenquadramento2', 'chkenquadramento3', 'chkenquadramento4', 'chkenquadramento5', 'chkenquadramento6'],
+];
+
 async function analisarFilaDeArquivos(arquivos, aoProgredir) {
   const encontradosAcumulados = {};
 
@@ -639,6 +687,17 @@ async function analisarFilaDeArquivos(arquivos, aoProgredir) {
 
     // eslint-disable-next-line no-await-in-loop -- processamento sequencial é proposital
     const encontrados = await analisarArquivo(arquivo, relatarProgressoArquivo);
+
+    // Se este arquivo encontrou uma opção "chkX" de um grupo exclusivo, remove qualquer opção do
+    // MESMO grupo que um arquivo anterior da fila já tenha colocado em encontradosAcumulados —
+    // a última opção encontrada (que também é sempre reavaliada, ver CAMPOS_REGRA_FIXA) é quem vale.
+    GRUPOS_EXCLUSIVOS.forEach((grupo) => {
+      const opçãoEncontradaNesteArquivo = grupo.some((chave) => encontrados[chave]);
+      if (!opçãoEncontradaNesteArquivo) return;
+      grupo.forEach((chave) => {
+        if (!encontrados[chave]) delete encontradosAcumulados[chave];
+      });
+    });
 
     Object.entries(encontrados).forEach(([chave, valor]) => {
       if (valor === undefined || valor === null || valor === '') return; // nunca sobrescreve com vazio
@@ -652,4 +711,4 @@ async function analisarFilaDeArquivos(arquivos, aoProgredir) {
   return encontradosAcumulados;
 }
 
-export { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA, textoEhEspelhoDaProposta, extrairCamposDoEspelho };
+export { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA, textoEhEspelhoDaProposta, extrairCamposDoEspelho, GRUPOS_EXCLUSIVOS };

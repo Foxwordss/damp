@@ -9,7 +9,7 @@
 // em scripts.js/dataBaseFunctions.js/publicFunctions.js, sem mudanças).
 // =================================================================================================
 
-import { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA } from './parser.js';
+import { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA, GRUPOS_EXCLUSIVOS } from './parser.js';
 
 // -------------------------------------------------------------------------------------------
 // FILA DE DOCUMENTOS: acumula arquivos anexados em momentos diferentes (nunca substitui a
@@ -86,8 +86,31 @@ function marcarCheckboxComoOMouse(elemento) {
   elemento.click();
 }
 
+function desmarcarCheckboxComoOMouse(elemento) {
+  if (!elemento.checked) return; // já desmarcado — não mexe
+  elemento.click(); // clicar num checkbox JÁ marcado desmarca ele (e dispara o handler de scripts.js)
+}
+
+// Antes de aplicar um grupo mutuamente exclusivo (modalidade, enquadramento), desmarca qualquer
+// opção do MESMO grupo que já esteja marcada na tela mas não seja a que foi encontrada agora — sem
+// isso, uma marcação deixada de um teste/extração anterior na mesma página (ex.: "empreendimento"
+// marcado de antes) pode continuar visível mesmo depois de uma nova extração corrigir o campo.
+function limparGruposExclusivosAntesDePreencher(encontrados) {
+  GRUPOS_EXCLUSIVOS.forEach((grupo) => {
+    const algumaOpçãoEncontrada = grupo.some((chave) => encontrados[chave]);
+    if (!algumaOpçãoEncontrada) return;
+    grupo.forEach((chave) => {
+      if (encontrados[chave]) return; // essa é a opção que vamos marcar agora, não mexe nela aqui
+      const elemento = document.getElementById(chave);
+      if (elemento && elemento.type === 'checkbox') desmarcarCheckboxComoOMouse(elemento);
+    });
+  });
+}
+
 function preencherDocumento(encontrados) {
   const chkYears = document.getElementById('chk_years');
+
+  limparGruposExclusivosAntesDePreencher(encontrados);
 
   Object.entries(encontrados).forEach(([chave, valor]) => {
     if (valor === undefined || valor === null || valor === '') return;
@@ -122,7 +145,7 @@ function preencherDocumento(encontrados) {
 
 function montarResumo(encontrados) {
   const total = Object.keys(encontrados).length;
-  return `Extração concluída: ${total} campo(s) identificado(s) e preenchido(s).\nConfira os dados antes de imprimir — o que não foi encontrado ficou em branco para preenchimento manual.`;
+  return `✔ Extração concluída: ${total} campo(s) identificado(s) e preenchido(s). Confira os dados na tela antes de imprimir — o que não foi encontrado ficou em branco para preenchimento manual.`;
 }
 
 // -------------------------------------------------------------------------------------------
@@ -165,18 +188,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const encontrouAlgo = Object.keys(encontrados).some((chave) => !CAMPOS_REGRA_FIXA.includes(chave));
       if (!encontrouAlgo) {
-        statusExtracao.textContent = '';
-        alert('Não foi possível identificar automaticamente nenhum dado nos documentos anexados. Tente fotos/PDFs mais nítidos, bem enquadrados e com boa iluminação.');
+        statusExtracao.textContent = '⚠ Não foi possível identificar automaticamente nenhum dado nos documentos anexados. Tente fotos/PDFs mais nítidos, bem enquadrados e com boa iluminação.';
         return;
       }
 
+      // Fica parado na tela mostrando o resumo (sem alert() bloqueando) — assim dá pra conferir os
+      // campos preenchidos no próprio documento antes de fazer qualquer outra coisa na página.
       preencherDocumento(encontrados);
-      statusExtracao.textContent = '';
-      alert(montarResumo(encontrados));
+      statusExtracao.textContent = montarResumo(encontrados);
     } catch (erro) {
       console.log('Erro ao processar OCR dos documentos: %s', erro);
-      statusExtracao.textContent = '';
-      alert('Não foi possível ler os documentos automaticamente. Verifique sua conexão (necessária só na 1ª vez, para baixar a biblioteca de OCR) e tente novamente.');
+      statusExtracao.textContent = '⚠ Não foi possível ler os documentos automaticamente. Verifique sua conexão (necessária só na 1ª vez, para baixar a biblioteca de OCR) e tente novamente.';
     } finally {
       botaoExtrair.disabled = false;
       botaoAnexar.disabled = false;
