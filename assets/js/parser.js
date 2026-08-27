@@ -205,7 +205,10 @@ const MAPA_ESTADO_CIVIL_ESPELHO = [
 // (ver ANALISE_ESPELHO_x_DAMP.md, item 3.2) — chkmodalidade1 é usado aqui como aproximação e deve
 // ser confirmado com o time de negócio antes de ir para produção.
 const MODALIDADES_ESPELHO = [
-  { chk: 'chkmodalidade1', valor: 'text_enquad1', regex: /Im[óo]vel\s+Novo/i },
+  // "Imóvel Novo" (compra na planta/concluído novo) E "Imóvel Usado" (revenda) caem os dois em
+  // "Aquisição Imóvel Concluído - Venda e Compra" — a diferença entre novo/usado não muda a
+  // modalidade da DAMP, só o valor de compra e venda.
+  { chk: 'chkmodalidade1', valor: 'text_enquad1', regex: /Im[óo]vel\s+(?:Novo|Usado)/i },
   { chk: 'chkmodalidade2', valor: 'text_enquad2', regex: /Im[óo]vel\s+em\s+Constru[çc][ãa]o/i },
   { chk: 'chkmodalidade3', valor: 'text_enquad3', regex: /Terreno\s+e\s+Constru[çc][ãa]o/i },
   { chk: 'chkmodalidade4', valor: 'text_enquad4', regex: /Constru[çc][ãa]o\s+em\s+Terreno\s+Pr[óo]prio/i },
@@ -240,13 +243,15 @@ function extrairCamposDoEspelho(texto) {
     if (dataNascimentoProponente) encontrados.text_data1 = dataNascimentoProponente;
   }
 
-  // ---- 2.4 - Dados do Participante - Proponente/Comprador ----
+  // ---- N.N - Dados do Participante - Proponente/Comprador ----
   // Usado como FALLBACK de CPF/Nome/Data (caso a seção 1 não tenha sido lida pelo OCR) e como
   // fonte única de Estado Civil e Endereço (residência), que não aparecem rotulados "do
-  // Proponente" na seção 1.
+  // Proponente" na seção 1. O NÚMERO da seção varia (2.4 quando tem Responsável Técnico/Vendedor/
+  // Construtor antes dela — imóvel novo; 2.1 quando não tem — imóvel usado, sem construtora
+  // envolvida), então o regex não fixa o número, só a frase.
   const secaoProponente = fatiaSecao(
     texto,
-    /2\.4\s*-\s*Dados\s+do\s+Participante\s*-\s*Proponente\s*\/?\s*Comprador/i,
+    /\d+(?:\.\d+)?\s*-\s*Dados\s+do\s+Participante\s*-\s*Proponente\s*\/?\s*Comprador/i,
     /3\s*-\s*IM[ÓO]VEL\b/i,
   );
 
