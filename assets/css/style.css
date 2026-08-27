@@ -1,0 +1,519 @@
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: calibri, sans-serif;
+  font-size: 16px;
+  margin: 40px;
+}
+
+#navegador_incompativel, #print_area {
+  display: none;
+}
+
+.fonte10 {
+  font-size: 10px;
+}
+
+.fonte11 {
+  font-size: 11px;
+}
+
+.fonte12 {
+  font-size: 12px;
+}
+
+.fonte13 {
+  font-size: 13px;
+}
+
+.fonte14 {
+  font-size: 14px;
+}
+
+.fonte16 {
+  font-size: 16px;
+}
+
+.oculto {
+  display: none;
+}
+
+.justificado {
+  text-align: justify;
+}
+
+.recuo20 {
+  margin-left: 20px;
+}
+
+.recuo30 {
+  margin-left: 30px;
+}
+
+.recuo40 {
+  margin-left: 40px;
+}
+
+.userInputs {
+  width: 101px;
+}
+
+.data {
+  width: 77px;
+}
+
+.valor {
+  min-width: 40px;
+}
+
+.nrdamp {
+  min-width: 185px;
+}
+
+.wd20 {
+  width: 22px;
+}
+
+.wd34 {
+  width: 34px;
+}
+
+.wd65 {
+  width: 65px;
+}
+
+.data, .userInputs, .valor, .nrdamp {
+  border: none;
+  font-size: 15px;
+  background: gainsboro;
+  font-weight: 700;
+  text-decoration: underline;
+  text-transform: uppercase;
+}
+
+.nrdamp {
+  font-size: 18px;
+}
+
+.data, .userInputs {
+  text-align: center;
+}
+
+.valor {
+  text-align: left;
+}
+
+#logo-img {
+  width: 172px;
+  /*border: solid 2px darkblue;*/
+  float: left !important;
+}
+
+#aut-declaracao {
+  width: 385px;
+  /*border: solid 2px darkred;*/
+  float: right !important;
+  margin-right: 0px;
+  font-size: 15px;
+  text-align: justify;
+}
+
+#box-sigilo {
+  margin-top: 10px;
+  margin-right: 15px;
+  text-align: center;
+  border-bottom: 1px solid #000;
+  border-left: 1px solid #000;
+  border-right: 1px solid #000;
+  width: 110px;
+  float: right;
+}
+
+.width_tmp_select {
+  display: none;
+}
+
+.spn-block {
+  display: block;
+}
+
+#selectEstCiv, #selectRegime {
+  cursor: pointer;
+  border: 0px;
+  -appearance: none;
+  -appearance: none;
+  text-indent: 0.01px;
+  text-overflow: '';
+  background: gainsboro;
+  font-weight: 700;
+  text-transform: uppercase;
+  min-width: 275px;
+}
+
+#residencia1, #residencia2, #usufruto1, #usufruto2 {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.hide_chk > label {
+  display: inline !important;
+  font-weight: 400 !important;
+}
+
+#regimecasado, #uniaoestavel, .item {
+  margin-top: -10px;
+}
+
+input:not([type="button"]) {
+  cursor: pointer;
+  text-align: left;
+  font-size: 15px !important;
+}
+
+#custom-warning {
+  width: 80px;
+  height: 80px;
+  border: 2px solid #a1a1a1;
+  background: #dddddd;
+  border-radius: 45px;
+  text-align: center;
+  font-size: 80px;
+  color: #fff;
+  background-color: #c9302c;
+  border-color: #ac2925;
+  font-family: initial, -webkit-pictograph, serif, cursive;
+}
+
+#custom-warning > span {
+  position: relative;
+  top: -20px;
+}
+
+.margintoprecuo {
+  margin-top: -10px;
+}
+
+.editableDiv {
+  width: 95%;
+  background: #D8D8D8;
+  border: 1px solid #ddd;
+  text-transform: uppercase;
+  font-weight: 700;
+  border: solid 1px white;
+}
+
+.justificado > li, justificado > p {
+  margin-top: -5px;
+}
+
+#tab_contasfgts, #cond_ftgs_msg {
+  display: none;
+}
+
+table {
+  width: 100%;
+}
+
+table, td, th {
+  border: 1px solid gray;
+  border-collapse: collapse;
+}
+
+td.rd_t {
+  border: solid 1px white !important;
+  border-right: 1px solid #808080 !important;
+}
+
+td > input {
+  border: none;
+  width: 100%;
+  height: 100%;
+  background-color: #D8D8D8;
+}
+
+#box_sig, td, th {
+  padding: 5px;
+}
+
+#damp {
+  text-align: right;
+  margin-right: 20px;
+}
+
+#text_numdamp {
+  text-align: center;
+}
+
+.minitexto {
+  font-size: 10px !important;
+}
+
+[contenteditable=true]:empty:before {
+  color: #A9A9A9;
+  content: attr(placeholder);
+  font-size: 15px;
+  display: block; /* For Firefox */
+}
+
+#endereco[contenteditable=true] {
+  background-color: gainsboro;
+}
+
+.end_camp {
+  border: none;
+  border-bottom: 1px solid black;
+  background-color: gainsboro;
+}
+
+#camporesponsabilidade {
+  margin-top: -10px;
+  margin-left: 20px;
+  margin-bottom: 15px;
+}
+
+.titulo-centralizado {
+  font-weight: 700;
+  text-align: center;
+}
+
+.assinatura {
+  border: none;
+  border-bottom: 1px solid #000;
+  background-color: #F9F9F9;
+  padding-left: 5px;
+}
+
+.div_assinat {
+  float: left;
+}
+
+footer {
+  clear: left;
+  text-align: center;
+}
+
+#printdiv {
+  text-align: center;
+  margin-top: 1.5rem;
+}
+
+#btImprimir,
+[data-action="registros-salvos"],
+[data-action="exportar-registros"],
+[data-action="limpar-form"] {
+  height: 55px;
+  min-width: 130px;
+  font-size: 25px;
+  text-transform: uppercase;
+}
+
+[data-action="exportar-registros"] {
+  display: block;
+  margin: 0 auto;
+}
+
+.printdiv_sec_options {
+  margin-top: 2rem;
+
+  .options {
+    border-left: 1px solid rgba(0, 0, 0, 0.3);
+    padding-left: 1.1rem;
+    margin-left: 1.25rem;
+    text-align: left;
+
+    .form-group {
+      padding: 0;
+      margin: 0;
+    }
+  }
+}
+
+#modal-registros-salvos .alert {
+  margin: 0;
+}
+
+.apagar-registro-salvo,
+.recuperar-registro-salvo {
+  text-transform: uppercase;
+}
+
+/* ******************** MEDIA PRINT ************************ */
+@media print {
+  html {
+    zoom: var(--zoom);
+  }
+
+  .hide_chk, .do-not-print {
+    display: none !important;
+  }
+
+  body {
+    margin-left: 2px !important;
+    margin-right: 2px !important;
+  }
+
+  .editableDiv {
+    text-decoration: underline;
+  }
+
+  div#printdiv,
+  [data-id="no-print-div"] {
+    display: none;
+  }
+}
+
+/*CAMPO 5 DO ENDERECO QUEBRADO */
+#mostrarCampoEnd, #end_comp_bairro, #municipio_usufruto {
+  display: none;
+}
+
+#end_comp_logradouro {
+  cursor: pointer;
+}
+
+/* *********************************************************************************** */
+
+/* SWITCH - By: https://www.w3schools.com */
+/* The switch - the box around the slider */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 4rem;
+  height: 2rem;
+}
+
+/* Hide default HTML checkbox */
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* The slider */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  border: unset;
+  background-color: #B7B7B7;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 1.25rem;
+  width: 1.25rem;
+  inset: 4px;
+  background-color: #FFF;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #0269C2;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #0269C2;
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(1.95rem);
+  -ms-transform: translateX(1.95rem);
+  transform: translateX(1.95rem);
+}
+
+/* Rounded sliders */
+.slider.round {
+  border-radius: 5rem;
+}
+
+.slider.round:before {
+  border-radius: 5rem;
+}
+
+#campoassinatura input {
+  text-transform: uppercase;
+}
+
+.unvisible {
+  display: none;
+}
+
+.d-none {
+  display: none;
+}
+
+/* List autocomplete */
+/* Tenta ocultar a setinha como dropdown */
+input[list]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+input[list]::-webkit-inner-spin-button,
+input[list]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+  display: none !important;
+}
+
+input[list] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: none !important;
+}
+
+/* Container para o posicionamento relativo */
+.autocomplete-container {
+  position: relative;
+}
+
+/* A lista de sugestões (o dropdown) */
+.autocomplete-items {
+  position: absolute;
+  border: 1px solid #ccc;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-top: none;
+  z-index: 9999; /* Garante que a lista fique sobre outros elementos */
+  top: 100%; /* Posiciona logo abaixo do input */
+  left: 0;
+  right: 0;
+
+  /* Estilos do Bootstrap 3 Dropdown */
+  list-style: none;
+  padding-left: 0;
+  margin-top: 2px;
+  background-color: #fff;
+  -webkit-background-clip: padding-box;
+  background-clip: padding-box;
+  border-radius: 4px;
+  -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
+}
+
+/* Itens individuais na lista */
+.autocomplete-items li {
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #333;
+  border-bottom: 1px solid #f4f4f4;
+  text-transform: uppercase;
+}
+
+/* Efeito ao passar o mouse sobre um item */
+.autocomplete-items li:hover {
+  background-color: #f5f5f5;
+}
+
+/* Estilo para destacar a parte do texto que corresponde à digitação */
+.autocomplete-items li strong {
+  font-weight: bold;
+  color: #000;
+}
