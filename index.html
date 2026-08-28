@@ -835,6 +835,13 @@
       <p><strong>Preenchimento automático (OCR)</strong> — anexe RG, CPF, carteira de trabalho, cadastro CAIXA e/ou o
         Espelho da Proposta (SIOPI) e clique em "Extrair e Preencher". Nada é enviado para servidor: a leitura acontece
         no próprio navegador.</p>
+      <div style="margin-bottom: 10px;">
+        <label for="select-participante" style="margin-right: 8px; font-weight: bold;">Preencher dados de:</label>
+        <select id="select-participante" class="form-control" style="display: inline-block; width: auto;">
+          <option value="principal">1º Proponente/Comprador</option>
+          <option value="coobrigado">2º Proponente (Coobrigado)</option>
+        </select>
+      </div>
       <input type="file" id="input-arquivos" accept="application/pdf,image/*" multiple style="display: none;">
       <button type="button" class="btn btn-secondary" id="botao-anexar">Anexar documentos</button>
       <button type="button" class="btn btn-primary" id="botao-extrair">Extrair e Preencher</button>
@@ -984,7 +991,7 @@
 
   <!-- SCRIPTS -->
   <script type="module" src="assets/js/scripts.js" defer></script>
-  <script type="module" src="assets/js/ocrUpload.js?v=20260827-2" defer></script>
+  <script type="module" src="assets/js/ocrUpload.js?v=20260827-5" defer></script>
 </body>
 
 </html>

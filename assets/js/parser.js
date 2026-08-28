@@ -200,6 +200,18 @@ const MAPA_ESTADO_CIVIL_ESPELHO = [
   { valor: 'divorciado', regex: /DIVORCIADO/i },
 ];
 
+// Regime de bens (select#selectRegime, só aparece na DAMP quando Estado Civil = "casado"). No
+// Espelho costuma vir num rótulo próprio ("Regime de Bens", "Regime de Casamento" ou variações) logo
+// perto do Estado Civil. A ordem importa: "COMUNHÃO UNIVERSAL" tem que ser testado ANTES de
+// "COMUNHÃO" genérico não é usado aqui, mas "SEPARAÇÃO ... BENS" precisa vir antes de um "SEPARAÇÃO"
+// solto (evita falso-positivo com "SEPARADO(A)" do Estado Civil, que não é regime de bens).
+const MAPA_REGIME_BENS_ESPELHO = [
+  { valor: 'universal', regex: /COMUNH[ÃA]O\s+UNIVERSAL/i },
+  { valor: 'parcial', regex: /COMUNH[ÃA]O\s+PARCIAL/i },
+  { valor: 'aquestos', regex: /PARTICIPA[ÇC][ÃA]O\s+FINAL\s+NOS\s+AQUESTOS/i },
+  { valor: 'separacao', regex: /SEPARA[ÇC][ÃA]O\s+(?:TOTAL\s+)?DE\s+BENS/i },
+];
+
 // Modalidades do item 7 da DAMP que têm alguma correspondência plausível com o "Item de Produto"/
 // "Tipo de Financiamento" do Espelho. NENHUM rótulo bate literalmente com "Imóvel Novo Individual"
 // (ver ANALISE_ESPELHO_x_DAMP.md, item 3.2) — chkmodalidade1 é usado aqui como aproximação e deve
@@ -217,41 +229,57 @@ const MODALIDADES_ESPELHO = [
   { chk: 'chkmodalidade7', valor: 'text_enquad7', regex: /Material\s+de\s+Constru[çc][ãa]o/i },
 ];
 
-function extrairCamposDoEspelho(texto) {
+// Regex que localiza o início do bloco de dados pessoais de cada participante, por tipo. O
+// NÚMERO da seção varia de Espelho pra Espelho (2.4 quando tem Responsável Técnico/Vendedor/
+// Construtor antes dela — imóvel novo; 2.1 quando não tem — imóvel usado), então nenhum dos dois
+// fixa o número, só a frase que identifica o participante.
+const REGEX_SECAO_POR_PARTICIPANTE = {
+  // 1º Proponente/Comprador (o principal da operação)
+  principal: /\d+(?:\.\d+)*\s*-\s*Dados\s+do\s+Participante\s*-\s*Proponente\s*\/?\s*Comprador/i,
+  // 2º Proponente — aparece no Espelho como "Coobrigado/Proponente" (ex.: "2.1.1 - Dados do
+  // Participante - Coobrigado/Proponente")
+  coobrigado: /\d+(?:\.\d+)*\s*-\s*Dados\s+do\s+Participante\s*-\s*Coobrigado\s*\/?\s*Proponente/i,
+};
+
+// participante: 'principal' (1º Proponente/Comprador) ou 'coobrigado' (2º Proponente) — controla
+// de qual bloco de participante os dados pessoais (CPF, Nome, Estado Civil, Endereço, Profissão,
+// FGTS) são lidos. Os campos que são da PROPOSTA em si (modalidade, valor, enquadramento, imóvel)
+// não mudam com o participante e são sempre lidos do documento inteiro, não deste bloco.
+function extrairCamposDoEspelho(texto, participante = 'principal') {
   const encontrados = {};
 
   // ---- 1 - IDENTIFICAÇÃO DA PROPOSTA ----
-  // Fonte PRIMÁRIA e mais confiável para CPF/Nome/Data de Nascimento do proponente: o próprio
-  // Espelho já rotula esses 3 campos de forma inequívoca logo no topo ("CPF do Proponente:",
-  // "Nome do Proponente:", e a "Data de Nascimento:" que vem logo depois — a primeira do
-  // documento, antes de "1.1 - Histórico do SIRIC"), sem precisar escopar por seção. Isso evita
-  // qualquer chance de pegar o CPF/Nome de outro participante.
-  const secaoIdentificacao = fatiaSecao(
-    texto,
-    /1\s*-\s*IDENTIFICA[ÇC][ÃA]O\s+DA\s+PROPOSTA/i,
-    /1\.1\s*-\s*Hist[óo]rico\s+do\s+SIRIC/i,
-  );
+  // Fonte PRIMÁRIA e mais confiável para CPF/Nome/Data de Nascimento — MAS só serve pro 1º
+  // Proponente: essa seção do Espelho só traz o "CPF do Proponente"/"Nome do Proponente"
+  // principal, nunca o do Coobrigado. Pro 2º Proponente, essa fonte é pulada e os dados vêm
+  // direto do bloco "Coobrigado/Proponente" mais abaixo.
+  if (participante === 'principal') {
+    const secaoIdentificacao = fatiaSecao(
+      texto,
+      /1\s*-\s*IDENTIFICA[ÇC][ÃA]O\s+DA\s+PROPOSTA/i,
+      /1\.1\s*-\s*Hist[óo]rico\s+do\s+SIRIC/i,
+    );
 
-  if (secaoIdentificacao) {
-    const cpfProponente = buscarAposRotulo(secaoIdentificacao, 'CPF\\s+do\\s+Proponente\\s*:?', /(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/);
-    if (cpfProponente) encontrados.text_cpf = cpfProponente;
+    if (secaoIdentificacao) {
+      const cpfProponente = buscarAposRotulo(secaoIdentificacao, 'CPF\\s+do\\s+Proponente\\s*:?', /(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/);
+      if (cpfProponente) encontrados.text_cpf = cpfProponente;
 
-    const nomeProponente = buscarAposRotulo(secaoIdentificacao, 'Nome\\s+do\\s+Proponente\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{5,60})/);
-    if (nomeProponente) encontrados.text_nome = nomeProponente;
+      const nomeProponente = buscarAposRotulo(secaoIdentificacao, 'Nome\\s+do\\s+Proponente\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{5,60})/);
+      if (nomeProponente) encontrados.text_nome = nomeProponente;
 
-    const dataNascimentoProponente = buscarAposRotulo(secaoIdentificacao, 'Data\\s+de\\s+Nascimento\\s*:?', /(\d{2}\/\d{2}\/\d{4})/);
-    if (dataNascimentoProponente) encontrados.text_data1 = dataNascimentoProponente;
+      const dataNascimentoProponente = buscarAposRotulo(secaoIdentificacao, 'Data\\s+de\\s+Nascimento\\s*:?', /(\d{2}\/\d{2}\/\d{4})/);
+      if (dataNascimentoProponente) encontrados.text_data1 = dataNascimentoProponente;
+    }
   }
 
-  // ---- N.N - Dados do Participante - Proponente/Comprador ----
-  // Usado como FALLBACK de CPF/Nome/Data (caso a seção 1 não tenha sido lida pelo OCR) e como
-  // fonte única de Estado Civil e Endereço (residência), que não aparecem rotulados "do
-  // Proponente" na seção 1. O NÚMERO da seção varia (2.4 quando tem Responsável Técnico/Vendedor/
-  // Construtor antes dela — imóvel novo; 2.1 quando não tem — imóvel usado, sem construtora
-  // envolvida), então o regex não fixa o número, só a frase.
+  // ---- Bloco de dados pessoais do participante selecionado (1º ou 2º Proponente) ----
+  // Usado como FALLBACK de CPF/Nome/Data do 1º Proponente (caso a seção 1 não tenha sido lida
+  // pelo OCR), e como fonte ÚNICA de tudo isso pro 2º Proponente/Coobrigado, além de Estado Civil
+  // e Endereço (residência), que não aparecem rotulados "do Proponente" na seção 1 pra ninguém.
+  const regexSecaoParticipante = REGEX_SECAO_POR_PARTICIPANTE[participante] || REGEX_SECAO_POR_PARTICIPANTE.principal;
   const secaoProponente = fatiaSecao(
     texto,
-    /\d+(?:\.\d+)?\s*-\s*Dados\s+do\s+Participante\s*-\s*Proponente\s*\/?\s*Comprador/i,
+    regexSecaoParticipante,
     /3\s*-\s*IM[ÓO]VEL\b/i,
   );
 
@@ -279,6 +307,28 @@ function extrairCamposDoEspelho(texto) {
     });
     if (estadoCivilEncontrado) encontrados.selectEstCiv = estadoCivilEncontrado.valor;
 
+    // Regime de bens — só faz sentido (e o campo só aparece na DAMP) quando o Estado Civil é
+    // "casado". Procura numa janela um pouco maior que a do Estado Civil porque, no Espelho, o
+    // regime normalmente vem numa linha/rótulo separado ("Regime de Bens:", "Regime de Casamento:"),
+    // não colado no mesmo "Estado Civil:".
+    if (estadoCivilEncontrado && estadoCivilEncontrado.valor === 'casado') {
+      const blocoRegime = buscarAposRotulo(
+        secaoProponente,
+        'Regime\\s+de\\s+(?:Bens|Casamento)\\s*:?',
+        /([A-ZÀ-Üa-zà-ü() ]{4,40})/,
+        60,
+      );
+      // Fallback: se não achou um rótulo "Regime de Bens/Casamento" explícito, procura direto pelos
+      // termos do regime dentro da mesma seção do proponente (alguns Espelhos trazem só o texto do
+      // regime, sem rótulo próprio, ex.: "... CASADO(A) - COMUNHÃO PARCIAL DE BENS").
+      const regimeEncontrado = MAPA_REGIME_BENS_ESPELHO.find(({ regex }) => regex.test(blocoRegime || secaoProponente));
+      if (regimeEncontrado) encontrados.selectRegime = regimeEncontrado.valor;
+
+      // Data "desde" do regime de bens (geralmente a mesma data do casamento).
+      const dataRegime = buscarAposRotulo(secaoProponente, '(?:Data\\s+d[eo]\\s+)?Casamento\\s*:?', /(\d{2}\/\d{2}\/\d{4})/, 40);
+      if (dataRegime) encontrados.text_data2 = dataRegime;
+    }
+
     // Endereço (município/UF) do proponente — layout em tabela, rótulos "Município:"/"UF:" em
     // células separadas (não necessariamente na mesma linha do texto após OCR).
     const municipioProponente = buscarAposRotulo(secaoProponente, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
@@ -305,93 +355,100 @@ function extrairCamposDoEspelho(texto) {
     else if (possui3Anos === 'nao') encontrados.sn_2 = true;
   }
 
-  // ---- 3 - IMÓVEL (3.1 Identificação + 3.2 Dados do Imóvel) ----
-  const secaoImovel = fatiaSecao(texto, /3\s*-\s*IM[ÓO]VEL\b/i, /4\s*-\s*PESQUISA\s+DE\s+SUBS[ÍI]DIOS/i);
+  // ---- Campos da PROPOSTA em si (imóvel, modalidade/valor, enquadramento, nº operação, local/data
+  // de assinatura) — SÓ são lidos/preenchidos para o 1º Proponente/Comprador ("principal"). Pro 2º
+  // Proponente (Coobrigado), o formulário já foi preenchido com esses dados na 1ª extração e o
+  // usuário pode ter ajustado algo manualmente na tela — preencher de novo aqui sobrescreveria esse
+  // ajuste à toa, então esse bloco inteiro é pulado quando participante === 'coobrigado'.
+  if (participante === 'principal') {
+    // ---- 3 - IMÓVEL (3.1 Identificação + 3.2 Dados do Imóvel) ----
+    const secaoImovel = fatiaSecao(texto, /3\s*-\s*IM[ÓO]VEL\b/i, /4\s*-\s*PESQUISA\s+DE\s+SUBS[ÍI]DIOS/i);
 
-  if (secaoImovel) {
-    const tipoLogradouro = buscarAposRotulo(secaoImovel, 'Tipo\\s+de\\s+Logradouro\\s*:?', /([A-ZÀ-Ü]{2,15})/);
-    const logradouro = buscarAposRotulo(secaoImovel, '(?<!Tipo\\s+de\\s+)Logradouro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
-    const numero = buscarAposRotulo(secaoImovel, 'N[uú]mero\\s*:?', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
-    const complemento = buscarAposRotulo(secaoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
-    const bairro = buscarAposRotulo(secaoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
-    const municipioImovel = buscarAposRotulo(secaoImovel, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
+    if (secaoImovel) {
+      const tipoLogradouro = buscarAposRotulo(secaoImovel, 'Tipo\\s+de\\s+Logradouro\\s*:?', /([A-ZÀ-Ü]{2,15})/);
+      const logradouro = buscarAposRotulo(secaoImovel, '(?<!Tipo\\s+de\\s+)Logradouro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
+      const numero = buscarAposRotulo(secaoImovel, 'N[uú]mero\\s*:?', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
+      const complemento = buscarAposRotulo(secaoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
+      const bairro = buscarAposRotulo(secaoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
+      const municipioImovel = buscarAposRotulo(secaoImovel, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
 
-    const numeroFormatado = numero && /^S\s?\/?\s?N$/i.test(numero) ? 'SN' : numero;
-    const logradouroCompleto = [tipoLogradouro, logradouro].filter(Boolean).join(' ') || logradouro;
+      const numeroFormatado = numero && /^S\s?\/?\s?N$/i.test(numero) ? 'SN' : numero;
+      const logradouroCompleto = [tipoLogradouro, logradouro].filter(Boolean).join(' ') || logradouro;
 
-    const linha1 = formatarLinha1EnderecoImovel({
-      logradouro: logradouroCompleto,
-      numero: numeroFormatado,
-      complemento,
-      bairro,
-    });
-    if (linha1) encontrados.editableDiv = linha1;
-    // Só a cidade varia de proposta pra proposta — o imóvel objeto do financiamento é sempre em
-    // Goiás (regra de negócio pedida pelo usuário, não extraída do Espelho).
-    if (municipioImovel) encontrados.text_logradouro2 = municipioImovel;
-    encontrados.text_uf2 = 'GO';
-  }
+      const linha1 = formatarLinha1EnderecoImovel({
+        logradouro: logradouroCompleto,
+        numero: numeroFormatado,
+        complemento,
+        bairro,
+      });
+      if (linha1) encontrados.editableDiv = linha1;
+      // Só a cidade varia de proposta pra proposta — o imóvel objeto do financiamento é sempre em
+      // Goiás (regra de negócio pedida pelo usuário, não extraída do Espelho).
+      if (municipioImovel) encontrados.text_logradouro2 = municipioImovel;
+      encontrados.text_uf2 = 'GO';
+    }
 
-  // ---- 1.2 - Dados da Proposta / 5.3 - Negociação da Proposta: modalidade e enquadramento ----
-  // "Item de Produto" é o campo mais confiável para identificar a modalidade (ex.: "7017601100 -
-  // NPMCMV - FS - Imóvel Novo Individual").
-  const itemDeProduto = buscarAposRotulo(texto, 'Item\\s+de\\s+Produto\\s*:?', /([^\n]{5,120})/, 130);
-  const textoModalidade = itemDeProduto || texto;
-  const modalidadeEncontrada = MODALIDADES_ESPELHO.find(({ regex }) => regex.test(textoModalidade));
-  if (modalidadeEncontrada) {
-    encontrados[modalidadeEncontrada.chk] = true;
-    // O valor que acompanha a modalidade é o "Valor Compra e Venda ou Orçamento Proposto pelo
-    // Cliente" (seção 5.3) — não o "Valor Financiamento Negociado" (esse é só a parte financiada,
-    // menor que o valor total do imóvel quando há entrada/recursos próprios). Busca "na mão" (em
-    // vez de buscarAposRotulo) por dois motivos: 1) o OCR às vezes troca a vírgula decimal por
-    // ponto ("432.600.00" em vez de "432.600,00"), então aceita os dois formatos; 2) se esse rótulo
-    // não tiver valor logo em seguida (célula vazia na tabela), a janela de busca pode "vazar" e
-    // pegar o número do campo vizinho "Valor Financiamento Negociado" — por isso, se a palavra
-    // "Financiamento" aparecer ANTES de qualquer número dentro da janela, descarta (fica em branco
-    // de propósito, em vez de preencher com o valor errado).
-    const rotuloCompraEVenda = /Valor\s+Compra\s+e\s+Venda\s+ou\s+Or[çc]amento\s+Proposto\s+pelo\s+Cliente\s*:?/i;
-    const matchRotulo = rotuloCompraEVenda.exec(texto);
-    if (matchRotulo) {
-      const janela = texto.slice(matchRotulo.index + matchRotulo[0].length, matchRotulo.index + matchRotulo[0].length + 40);
-      const valorMatch = janela.match(/R?\$?\s*(\d[\d.,]{3,17}\d)/);
-      const antesDoValor = valorMatch ? janela.slice(0, valorMatch.index) : '';
-      if (valorMatch && !/Financiamento/i.test(antesDoValor)) {
-        // Normaliza pro formato "1.234,56": remove tudo que não é dígito nem separador, garante
-        // que os 2 últimos dígitos viram a parte decimal (","), e o resto vira separador de milhar (".").
-        const digitosEDecimais = valorMatch[1].replace(/[.,]/g, '');
-        const parteInteira = digitosEDecimais.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-        const parteDecimal = digitosEDecimais.slice(-2);
-        encontrados[modalidadeEncontrada.valor] = `${parteInteira || '0'},${parteDecimal}`;
+    // ---- 1.2 - Dados da Proposta / 5.3 - Negociação da Proposta: modalidade e enquadramento ----
+    // "Item de Produto" é o campo mais confiável para identificar a modalidade (ex.: "7017601100 -
+    // NPMCMV - FS - Imóvel Novo Individual").
+    const itemDeProduto = buscarAposRotulo(texto, 'Item\\s+de\\s+Produto\\s*:?', /([^\n]{5,120})/, 130);
+    const textoModalidade = itemDeProduto || texto;
+    const modalidadeEncontrada = MODALIDADES_ESPELHO.find(({ regex }) => regex.test(textoModalidade));
+    if (modalidadeEncontrada) {
+      encontrados[modalidadeEncontrada.chk] = true;
+      // O valor que acompanha a modalidade é o "Valor Compra e Venda ou Orçamento Proposto pelo
+      // Cliente" (seção 5.3) — não o "Valor Financiamento Negociado" (esse é só a parte financiada,
+      // menor que o valor total do imóvel quando há entrada/recursos próprios). Busca "na mão" (em
+      // vez de buscarAposRotulo) por dois motivos: 1) o OCR às vezes troca a vírgula decimal por
+      // ponto ("432.600.00" em vez de "432.600,00"), então aceita os dois formatos; 2) se esse rótulo
+      // não tiver valor logo em seguida (célula vazia na tabela), a janela de busca pode "vazar" e
+      // pegar o número do campo vizinho "Valor Financiamento Negociado" — por isso, se a palavra
+      // "Financiamento" aparecer ANTES de qualquer número dentro da janela, descarta (fica em branco
+      // de propósito, em vez de preencher com o valor errado).
+      const rotuloCompraEVenda = /Valor\s+Compra\s+e\s+Venda\s+ou\s+Or[çc]amento\s+Proposto\s+pelo\s+Cliente\s*:?/i;
+      const matchRotulo = rotuloCompraEVenda.exec(texto);
+      if (matchRotulo) {
+        const janela = texto.slice(matchRotulo.index + matchRotulo[0].length, matchRotulo.index + matchRotulo[0].length + 40);
+        const valorMatch = janela.match(/R?\$?\s*(\d[\d.,]{3,17}\d)/);
+        const antesDoValor = valorMatch ? janela.slice(0, valorMatch.index) : '';
+        if (valorMatch && !/Financiamento/i.test(antesDoValor)) {
+          // Normaliza pro formato "1.234,56": remove tudo que não é dígito nem separador, garante
+          // que os 2 últimos dígitos viram a parte decimal (","), e o resto vira separador de milhar (".").
+          const digitosEDecimais = valorMatch[1].replace(/[.,]/g, '');
+          const parteInteira = digitosEDecimais.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+          const parteDecimal = digitosEDecimais.slice(-2);
+          encontrados[modalidadeEncontrada.valor] = `${parteInteira || '0'},${parteDecimal}`;
+        }
       }
     }
+
+    // Regra de negócio: pra todo Espelho da Proposta processado aqui, o enquadramento é sempre a
+    // 1ª opção ("CARTA DE CRÉDITO FGTS – CCFGTS/PMCMV OU CCFGTS-OPERAÇÕES ESPECIAIS") — não depende
+    // de achar "CCFGTS" no OCR (esse texto é obrigatório em todos os casos deste fluxo).
+    encontrados.chkenquadramento1 = true;
+
+    // Nº OPERAÇÃO (aba "Contas FGTS" da DAMP) — só preenche quando o próprio Espelho traz o campo
+    // homônimo preenchido; quando vier em branco (comum), o campo é deixado em aberto de propósito
+    // (ver ANALISE_ESPELHO_x_DAMP.md, item 3.2 — não há regra de negócio definida para usar Código
+    // da Reserva ou Nº Contrato para Administração como substituto).
+    const numeroOperacaoDamp = buscarAposRotulo(
+      texto,
+      'N[uú]mero\\s+da\\s+Opera[çc][ãa]o\\s*-\\s*DAMP\\s*:?',
+      /([\d.\-\/]{4,20})/,
+      40,
+    );
+    if (numeroOperacaoDamp) encontrados.text_numdamp = numeroOperacaoDamp;
+
+    // ---- Local/data da assinatura ----
+    // Regra pedida pelo usuário: local sempre "GOIANIA" (fixo, não extraído do Espelho) e a data
+    // sempre a data atual (do momento em que a extração é feita), nunca uma data do documento.
+    encontrados.local_assin = 'GOIANIA';
+    const hoje = new Date();
+    encontrados.dia_assin = String(hoje.getDate()).padStart(2, '0');
+    encontrados.ano_assin = String(hoje.getFullYear());
+    const MESES_BR_ESPELHO = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+    encontrados.mes_assin = MESES_BR_ESPELHO[hoje.getMonth()];
   }
-
-  // Regra de negócio: pra todo Espelho da Proposta processado aqui, o enquadramento é sempre a
-  // 1ª opção ("CARTA DE CRÉDITO FGTS – CCFGTS/PMCMV OU CCFGTS-OPERAÇÕES ESPECIAIS") — não depende
-  // de achar "CCFGTS" no OCR (esse texto é obrigatório em todos os casos deste fluxo).
-  encontrados.chkenquadramento1 = true;
-
-  // Nº OPERAÇÃO (aba "Contas FGTS" da DAMP) — só preenche quando o próprio Espelho traz o campo
-  // homônimo preenchido; quando vier em branco (comum), o campo é deixado em aberto de propósito
-  // (ver ANALISE_ESPELHO_x_DAMP.md, item 3.2 — não há regra de negócio definida para usar Código
-  // da Reserva ou Nº Contrato para Administração como substituto).
-  const numeroOperacaoDamp = buscarAposRotulo(
-    texto,
-    'N[uú]mero\\s+da\\s+Opera[çc][ãa]o\\s*-\\s*DAMP\\s*:?',
-    /([\d.\-\/]{4,20})/,
-    40,
-  );
-  if (numeroOperacaoDamp) encontrados.text_numdamp = numeroOperacaoDamp;
-
-  // ---- Local/data da assinatura ----
-  // Regra pedida pelo usuário: local sempre "GOIANIA" (fixo, não extraído do Espelho) e a data
-  // sempre a data atual (do momento em que a extração é feita), nunca uma data do documento.
-  encontrados.local_assin = 'GOIANIA';
-  const hoje = new Date();
-  encontrados.dia_assin = String(hoje.getDate()).padStart(2, '0');
-  encontrados.ano_assin = String(hoje.getFullYear());
-  const MESES_BR_ESPELHO = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
-  encontrados.mes_assin = MESES_BR_ESPELHO[hoje.getMonth()];
 
   return { encontrados, secoesRendaEAgenciaEncontradas: false };
 }
@@ -614,7 +671,7 @@ function extrairCamposDoTexto(texto) {
 const CAMPOS_PARADA_ANTECIPADA = ['text_nome', 'text_data1', 'text_cpf', 'text_pis', 'text_logradouro', 'text_uf1'];
 
 // Roda o OCR completo em UM arquivo (PDF ou imagem) e devolve os campos identificados.
-async function analisarArquivo(arquivo, aoProgredir) {
+async function analisarArquivo(arquivo, aoProgredir, participante = 'principal') {
   const relatarProgresso = (mensagem) => { if (aoProgredir) aoProgredir(mensagem); };
 
   relatarProgresso('Carregando OCR... (1ª vez pode demorar)');
@@ -646,7 +703,7 @@ async function analisarArquivo(arquivo, aoProgredir) {
       // O Espelho da Proposta (SIOPI) tem layout de tabela rótulo/valor e rótulos repetidos por
       // participante — usa extrator dedicado em vez do genérico (texto corrido de RG/CTPS/cadastro).
       const resultadoParcial = textoEhEspelhoDaProposta(textoAcumulado)
-        ? extrairCamposDoEspelho(textoAcumulado)
+        ? extrairCamposDoEspelho(textoAcumulado, participante)
         : extrairCamposDoTexto(textoAcumulado);
       encontrados = resultadoParcial.encontrados;
 
@@ -681,7 +738,8 @@ const GRUPOS_EXCLUSIVOS = [
   ['chkenquadramento1', 'chkenquadramento2', 'chkenquadramento3', 'chkenquadramento4', 'chkenquadramento5', 'chkenquadramento6'],
 ];
 
-async function analisarFilaDeArquivos(arquivos, aoProgredir) {
+async function analisarFilaDeArquivos(arquivos, aoProgredir, opcoes = {}) {
+  const { participante = 'principal' } = opcoes;
   const encontradosAcumulados = {};
 
   for (let indice = 0; indice < arquivos.length; indice++) {
@@ -691,7 +749,7 @@ async function analisarFilaDeArquivos(arquivos, aoProgredir) {
     };
 
     // eslint-disable-next-line no-await-in-loop -- processamento sequencial é proposital
-    const encontrados = await analisarArquivo(arquivo, relatarProgressoArquivo);
+    const encontrados = await analisarArquivo(arquivo, relatarProgressoArquivo, participante);
 
     // Se este arquivo encontrou uma opção "chkX" de um grupo exclusivo, remove qualquer opção do
     // MESMO grupo que um arquivo anterior da fila já tenha colocado em encontradosAcumulados —

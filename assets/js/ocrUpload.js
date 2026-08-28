@@ -12,7 +12,7 @@
 // O "?v=" abaixo é um carimbo de versão: sempre que parser.js é atualizado, o número muda
 // propositalmente pra forçar o navegador (e o cache do GitHub Pages/CDN) a buscar o arquivo novo
 // em vez de servir uma cópia antiga em cache.
-import { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA, GRUPOS_EXCLUSIVOS } from './parser.js?v=20260827-2';
+import { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA, GRUPOS_EXCLUSIVOS } from './parser.js?v=20260827-5';
 
 // -------------------------------------------------------------------------------------------
 // FILA DE DOCUMENTOS: acumula arquivos anexados em momentos diferentes (nunca substitui a
@@ -164,6 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const botaoAnexar = document.getElementById('botao-anexar');
   const botaoExtrair = document.getElementById('botao-extrair');
   const statusExtracao = document.getElementById('status-extracao');
+  const selectParticipante = document.getElementById('select-participante');
 
   if (!inputArquivos || !botaoAnexar || !botaoExtrair || !statusExtracao) return;
 
@@ -184,10 +185,17 @@ document.addEventListener('DOMContentLoaded', () => {
     botaoExtrair.disabled = true;
     botaoAnexar.disabled = true;
 
+    // Qual participante ler do Espelho: "principal" = 1º Proponente/Comprador (seção "Dados do
+    // Participante - Proponente/Comprador"), "coobrigado" = 2º Proponente (seção "Dados do
+    // Participante - Coobrigado/Proponente"). Sem o seletor no HTML, cai sempre no 1º Proponente.
+    const participanteSelecionado = selectParticipante ? selectParticipante.value : 'principal';
+
     try {
-      const encontrados = await analisarFilaDeArquivos(arquivos, (mensagem) => {
-        statusExtracao.textContent = mensagem;
-      });
+      const encontrados = await analisarFilaDeArquivos(
+        arquivos,
+        (mensagem) => { statusExtracao.textContent = mensagem; },
+        { participante: participanteSelecionado },
+      );
 
       const encontrouAlgo = Object.keys(encontrados).some((chave) => !CAMPOS_REGRA_FIXA.includes(chave));
       if (!encontrouAlgo) {
