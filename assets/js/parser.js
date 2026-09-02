@@ -169,12 +169,12 @@ function fatiaSecao(texto, regexInicio, regexFim, tamanhoMaxSemFim = 2500) {
 // Linha 2 (campos text_logradouro2 / text_uf2): CIDADE / UF
 // Formato pedido pelo usuário para o campo "5 - IMÓVEL OBJETO DO FINANCIAMENTO" (a <div
 // class="editableDiv"> logo abaixo de "O imóvel objeto da aquisição está localizado à"):
-// LOGRADOURO ; NÚMERO - COMPLEMENTO - MUNICIPIO - UF - CEP
+// LOGRADOURO ; NÚMERO - COMPLEMENTO - BAIRRO - MUNICIPIO - UF - CEP
 // Cada parte é opcional (fica de fora quando não foi encontrada) — só o separador muda: "LOGRADOURO"
-// e "NÚMERO" ficam unidos por " ; ", o resto (COMPLEMENTO, MUNICIPIO, UF, CEP) por " - ".
-function formatarLinha1EnderecoImovel({ logradouro, numero, complemento, municipio, uf, cep }) {
+// e "NÚMERO" ficam unidos por " ; ", o resto (COMPLEMENTO, BAIRRO, MUNICIPIO, UF, CEP) por " - ".
+function formatarLinha1EnderecoImovel({ logradouro, numero, complemento, bairro, municipio, uf, cep }) {
   const logradouroNumero = [logradouro, numero].filter(Boolean).join(' ; ');
-  const partes = [logradouroNumero, complemento, municipio, uf, cep].filter(Boolean);
+  const partes = [logradouroNumero, complemento, bairro, municipio, uf, cep].filter(Boolean);
   return partes.length ? partes.join(' - ') : null;
 }
 
@@ -416,6 +416,7 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
       const logradouro = buscarAposRotulo(secaoImovel, '(?<!Tipo\\s+de\\s+)Logradouro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
       const numero = buscarAposRotulo(secaoImovel, 'N[uú]mero\\s*:?', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
       const complemento = buscarAposRotulo(secaoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
+      const bairroImovel = buscarAposRotulo(secaoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
       const municipioImovel = buscarAposRotulo(secaoImovel, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
       // CEP: aceita com ou sem hífen/ponto ("74000-000", "74000000" ou, como o Espelho às vezes
       // formata, "74.000-000" com ponto de milhar no meio) — normaliza tudo pro padrão "00000-000".
@@ -431,6 +432,7 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
         logradouro: logradouroCompleto,
         numero: numeroFormatado,
         complemento,
+        bairro: bairroImovel,
         municipio: municipioImovel,
         uf: 'GO',
         cep: cepFormatado,
@@ -603,6 +605,7 @@ function extrairCamposDoTexto(texto) {
     const numeroImovelBruto = buscarAposRotulo(blocoImovel, 'N[uú]mero(?!\\s+d[oa])\\s*:?\\s*', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
     const numeroImovel = numeroImovelBruto && /^S\s?\/?\s?N$/i.test(numeroImovelBruto) ? 'SN' : numeroImovelBruto;
     const complementoImovel = buscarAposRotulo(blocoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
+    const bairroImovel = buscarAposRotulo(blocoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
     const matchMunicipioUFImovel = blocoImovel.match(/Munic[íi]pio\s*-\s*UF\s*:?\s*([A-ZÀ-Ü][A-ZÀ-Ü ]*?)\s*-\s*([A-Z]{2})\b/i);
     const cepImovel = buscarAposRotulo(blocoImovel, 'CEP\\s*:?', /(\d{2}\.?\d{3}-?\d{3})/, 30);
     const cepImovelFormatado = cepImovel ? cepImovel.replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2') : null;
@@ -613,6 +616,7 @@ function extrairCamposDoTexto(texto) {
       logradouro: logradouroCompletoImovel,
       numero: numeroImovel,
       complemento: complementoImovel,
+      bairro: bairroImovel,
       municipio: matchMunicipioUFImovel ? matchMunicipioUFImovel[1].trim() : null,
       uf: matchMunicipioUFImovel ? matchMunicipioUFImovel[2].trim().toUpperCase() : null,
       cep: cepImovelFormatado,
