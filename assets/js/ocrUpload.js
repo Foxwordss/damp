@@ -165,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const botaoExtrair = document.getElementById('botao-extrair');
   const statusExtracao = document.getElementById('status-extracao');
   const selectParticipante = document.getElementById('select-participante');
+  const areaArrastarSoltar = document.getElementById('area-arrastar-soltar');
 
   if (!inputArquivos || !botaoAnexar || !botaoExtrair || !statusExtracao) return;
 
@@ -174,6 +175,49 @@ document.addEventListener('DOMContentLoaded', () => {
     filaDocumentos.adicionar(evento.target.files);
     evento.target.value = '';
   });
+
+  // -----------------------------------------------------------------------------------------
+  // ARRASTAR E SOLTAR (drag-and-drop): clicar na área abre o mesmo seletor de arquivos do botão
+  // "Anexar documentos"; soltar um ou mais arquivos arrastados do sistema operacional (ou de outra
+  // aba/janela) adiciona eles direto na fila, sem precisar do seletor.
+  // -----------------------------------------------------------------------------------------
+  if (areaArrastarSoltar) {
+    const CLASSE_ARRASTANDO_POR_CIMA = 'area-arrastar-soltar--ativa';
+
+    areaArrastarSoltar.addEventListener('click', () => inputArquivos.click());
+
+    // preventDefault em dragover é obrigatório pro navegador aceitar o "drop" — sem isso, ele
+    // interpreta como "abrir o arquivo" (navegando pra fora da página) em vez de disparar 'drop'.
+    areaArrastarSoltar.addEventListener('dragover', (evento) => {
+      evento.preventDefault();
+      areaArrastarSoltar.classList.add(CLASSE_ARRASTANDO_POR_CIMA);
+      areaArrastarSoltar.style.backgroundColor = '#eef6ff';
+      areaArrastarSoltar.style.borderColor = '#0d6efd';
+    });
+
+    areaArrastarSoltar.addEventListener('dragleave', () => {
+      areaArrastarSoltar.classList.remove(CLASSE_ARRASTANDO_POR_CIMA);
+      areaArrastarSoltar.style.backgroundColor = '';
+      areaArrastarSoltar.style.borderColor = '#adb5bd';
+    });
+
+    areaArrastarSoltar.addEventListener('drop', (evento) => {
+      evento.preventDefault(); // essencial: sem isso o navegador navega/abre o arquivo solto
+      areaArrastarSoltar.classList.remove(CLASSE_ARRASTANDO_POR_CIMA);
+      areaArrastarSoltar.style.backgroundColor = '';
+      areaArrastarSoltar.style.borderColor = '#adb5bd';
+      filaDocumentos.adicionar(evento.dataTransfer.files);
+    });
+
+    // Impede que soltar um arquivo FORA da área (no resto da página) faça o navegador abrir/navegar
+    // pra ele — comportamento padrão do Chrome/Firefox quando não há um handler de 'drop' cancelando.
+    ['dragover', 'drop'].forEach((tipoEvento) => {
+      window.addEventListener(tipoEvento, (evento) => {
+        if (evento.target === areaArrastarSoltar || areaArrastarSoltar.contains(evento.target)) return;
+        evento.preventDefault();
+      });
+    });
+  }
 
   botaoExtrair.addEventListener('click', async () => {
     const arquivos = filaDocumentos.obterArquivos();

@@ -842,7 +842,20 @@
           <option value="coobrigado">2º Proponente (Coobrigado)</option>
         </select>
       </div>
-      <input type="file" id="input-arquivos" accept="application/pdf,image/*" multiple style="display: none;">
+      <!--
+        O input de arquivo fica "visualmente" escondido (não com display:none) de propósito: em
+        alguns navegadores, clicar/focar um elemento com display:none joga o scroll da página pro
+        topo (o navegador não consegue rolar até um elemento invisível e usa o topo como padrão) —
+        foi exatamente o "pulo pro início" relatado ao anexar um documento. Com opacity:0 + tamanho
+        de 1px, o elemento continua no fluxo normal da página (então o navegador rola até a posição
+        real dele, que é a mesma da área de anexo) mas não aparece pra ninguém.
+      -->
+      <input type="file" id="input-arquivos" accept="application/pdf,image/*" multiple
+        style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; opacity: 0;">
+      <div id="area-arrastar-soltar" class="do-not-print"
+        style="margin-bottom: 10px; padding: 20px; border: 2px dashed #adb5bd; border-radius: 6px; text-align: center; color: #6c757d; cursor: pointer; transition: background-color .15s, border-color .15s;">
+        Arraste e solte os documentos aqui, ou clique para escolher os arquivos.
+      </div>
       <button type="button" class="btn btn-secondary" id="botao-anexar">Anexar documentos</button>
       <button type="button" class="btn btn-primary" id="botao-extrair">Extrair e Preencher</button>
       <ul id="lista-arquivos" class="list-group" style="margin-top: 10px;"></ul>
@@ -991,7 +1004,7 @@
 
   <!-- SCRIPTS -->
   <script type="module" src="assets/js/scripts.js" defer></script>
-  <script type="module" src="assets/js/ocrUpload.js?v=20260901-3" defer></script>
+  <script type="module" src="assets/js/ocrUpload.js?v=20260901-4" defer></script>
 </body>
 
 </html>
