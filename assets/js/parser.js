@@ -61,7 +61,10 @@ async function pdfParaImagens(arquivo, maxPaginas = 15) {
 
   for (let numeroPagina = 1; numeroPagina <= totalPaginas; numeroPagina++) {
     const pagina = await pdf.getPage(numeroPagina);
-    const viewport = pagina.getViewport({ scale: 2 });
+    // scale 2 (~144 DPI) deixava números pequenos (ex.: valores em R$) vulneráveis a erro de
+    // dígito no OCR (ex.: "365.000,00" lido como "285.000,00"). scale 3 (~216 DPI) dá mais pixels
+    // por caractere pro Tesseract, reduzindo bastante esse tipo de confusão de dígito.
+    const viewport = pagina.getViewport({ scale: 3 });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -164,9 +167,35 @@ function fatiaSecao(texto, regexInicio, regexFim, tamanhoMaxSemFim = 2500) {
 // ---- Regra estrita de formatação do endereço do imóvel (Seção 5), sempre em 2 linhas ----
 // Linha 1 (vai no <div class="editableDiv"> do documento): LOGRADOURO, NÚMERO - COMPLEMENTO - BAIRRO
 // Linha 2 (campos text_logradouro2 / text_uf2): CIDADE / UF
-function formatarLinha1EnderecoImovel({ logradouro, numero, complemento, bairro }) {
-  const logradouroNumero = [logradouro, numero].filter(Boolean).join(', ');
-  return [logradouroNumero, complemento, bairro].filter(Boolean).join(' - ') || null;
+// Formato pedido pelo usuário para o campo "5 - IMÓVEL OBJETO DO FINANCIAMENTO" (a <div
+// class="editableDiv"> logo abaixo de "O imóvel objeto da aquisição está localizado à"):
+// LOGRADOURO ; NÚMERO - COMPLEMENTO - MUNICIPIO - UF - CEP
+// Cada parte é opcional (fica de fora quando não foi encontrada) — só o separador muda: "LOGRADOURO"
+// e "NÚMERO" ficam unidos por " ; ", o resto (COMPLEMENTO, MUNICIPIO, UF, CEP) por " - ".
+function formatarLinha1EnderecoImovel({ logradouro, numero, complemento, municipio, uf, cep }) {
+  const logradouroNumero = [logradouro, numero].filter(Boolean).join(' ; ');
+  const partes = [logradouroNumero, complemento, municipio, uf, cep].filter(Boolean);
+  return partes.length ? partes.join(' - ') : null;
+}
+
+// Formata um número JS pro padrão monetário brasileiro usado nos campos da DAMP: "1.234,56".
+function formatarValorMonetario(numero) {
+  const arredondado = Math.round(numero * 100) / 100;
+  const [parteInteira, parteDecimal] = arredondado.toFixed(2).split('.');
+  return `${parteInteira.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${parteDecimal}`;
+}
+
+// Calcula o Valor Compra e Venda a partir de dois campos numéricos independentes e menores
+// (Valor Financiamento Negociado, Cota de Financiamento Calculada em %) — usa a mesma relação que
+// a própria SIOPI usa pra gerar a Cota: Financiamento = Cota% × Compra e Venda. Serve de conferência
+// contra erro de dígito do OCR no valor de compra e venda (que é sempre o maior número da tabela e
+// por isso o mais fácil de o OCR errar 1 dígito sem se notar).
+function calcularValorCompraEVendaPelaCota(valorFinanciamentoTexto, cotaTexto) {
+  if (!valorFinanciamentoTexto || !cotaTexto) return null;
+  const financiamento = Number(valorFinanciamentoTexto.replace(/\./g, '').replace(',', '.'));
+  const cota = Number(cotaTexto.replace(',', '.')) / 100;
+  if (!Number.isFinite(financiamento) || !Number.isFinite(cota) || financiamento <= 0 || cota <= 0) return null;
+  return financiamento / cota;
 }
 
 const CAMPOS_REGRA_FIXA = [
@@ -369,17 +398,24 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
       const logradouro = buscarAposRotulo(secaoImovel, '(?<!Tipo\\s+de\\s+)Logradouro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
       const numero = buscarAposRotulo(secaoImovel, 'N[uú]mero\\s*:?', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
       const complemento = buscarAposRotulo(secaoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
-      const bairro = buscarAposRotulo(secaoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
       const municipioImovel = buscarAposRotulo(secaoImovel, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
+      // CEP: aceita com ou sem hífen/ponto ("74000-000", "74000000" ou, como o Espelho às vezes
+      // formata, "74.000-000" com ponto de milhar no meio) — normaliza tudo pro padrão "00000-000".
+      const cep = buscarAposRotulo(secaoImovel, 'CEP\\s*:?', /(\d{2}\.?\d{3}-?\d{3})/, 30);
+      const cepFormatado = cep ? cep.replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2') : null;
 
       const numeroFormatado = numero && /^S\s?\/?\s?N$/i.test(numero) ? 'SN' : numero;
       const logradouroCompleto = [tipoLogradouro, logradouro].filter(Boolean).join(' ') || logradouro;
 
+      // UF do imóvel é sempre "GO" (regra de negócio pedida pelo usuário, não extraída do Espelho)
+      // — usada tanto na linha do editableDiv quanto no campo separado text_uf2.
       const linha1 = formatarLinha1EnderecoImovel({
         logradouro: logradouroCompleto,
         numero: numeroFormatado,
         complemento,
-        bairro,
+        municipio: municipioImovel,
+        uf: 'GO',
+        cep: cepFormatado,
       });
       if (linha1) encontrados.editableDiv = linha1;
       // Só a cidade varia de proposta pra proposta — o imóvel objeto do financiamento é sempre em
@@ -418,6 +454,26 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
           const parteInteira = digitosEDecimais.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
           const parteDecimal = digitosEDecimais.slice(-2);
           encontrados[modalidadeEncontrada.valor] = `${parteInteira || '0'},${parteDecimal}`;
+        }
+      }
+
+      // ---- Conferência do valor contra erro de dígito do OCR ----
+      // A própria SIOPI garante essa conta: Valor Financiamento Negociado = Cota de Financiamento
+      // Calculada (%) × Valor Compra e Venda. São 2 números MENORES e mais fáceis do OCR acertar
+      // (financiamento e a cota em %) — se o valor calculado por eles divergir muito do valor lido
+      // direto acima, o dígito errado quase sempre está no valor de compra e venda (é o maior número
+      // da tabela, ex.: OCR trocando "365.000,00" por "285.000,00"), então o valor calculado prevalece.
+      const valorFinanciamentoTexto = buscarAposRotulo(texto, 'Valor\\s+Financiamento\\s+Negociado\\s*:?', /R?\$?\s*(\d[\d.,]{3,17}\d)/, 40);
+      const cotaFinanciamentoTexto = buscarAposRotulo(texto, 'Cota\\s+de\\s+Financiamento\\s+Calculada\\s*:?', /(\d{1,3}(?:[.,]\d{1,4})?)\s*%/, 40);
+      const valorCalculadoCompraEVenda = calcularValorCompraEVendaPelaCota(valorFinanciamentoTexto, cotaFinanciamentoTexto);
+      if (valorCalculadoCompraEVenda) {
+        const valorLidoDireto = encontrados[modalidadeEncontrada.valor]
+          ? Number(encontrados[modalidadeEncontrada.valor].replace(/\./g, '').replace(',', '.'))
+          : null;
+        const divergeDoCalculado = valorLidoDireto === null
+          || Math.abs(valorCalculadoCompraEVenda - valorLidoDireto) / valorCalculadoCompraEVenda > 0.02; // >2% de diferença
+        if (divergeDoCalculado) {
+          encontrados[modalidadeEncontrada.valor] = formatarValorMonetario(valorCalculadoCompraEVenda);
         }
       }
     }
@@ -531,8 +587,9 @@ function extrairCamposDoTexto(texto) {
     const numeroImovelBruto = buscarAposRotulo(blocoImovel, 'N[uú]mero(?!\\s+d[oa])\\s*:?\\s*', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
     const numeroImovel = numeroImovelBruto && /^S\s?\/?\s?N$/i.test(numeroImovelBruto) ? 'SN' : numeroImovelBruto;
     const complementoImovel = buscarAposRotulo(blocoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
-    const bairroImovel = buscarAposRotulo(blocoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
     const matchMunicipioUFImovel = blocoImovel.match(/Munic[íi]pio\s*-\s*UF\s*:?\s*([A-ZÀ-Ü][A-ZÀ-Ü ]*?)\s*-\s*([A-Z]{2})\b/i);
+    const cepImovel = buscarAposRotulo(blocoImovel, 'CEP\\s*:?', /(\d{2}\.?\d{3}-?\d{3})/, 30);
+    const cepImovelFormatado = cepImovel ? cepImovel.replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2') : null;
 
     const logradouroCompletoImovel = [tipoLogradouroImovel, logradouroImovel].filter(Boolean).join(' ') || logradouroImovel;
 
@@ -540,7 +597,9 @@ function extrairCamposDoTexto(texto) {
       logradouro: logradouroCompletoImovel,
       numero: numeroImovel,
       complemento: complementoImovel,
-      bairro: bairroImovel,
+      municipio: matchMunicipioUFImovel ? matchMunicipioUFImovel[1].trim() : null,
+      uf: matchMunicipioUFImovel ? matchMunicipioUFImovel[2].trim().toUpperCase() : null,
+      cep: cepImovelFormatado,
     });
     if (linha1) encontrados.editableDiv = linha1; // vai no <div class="editableDiv"> do documento
 
