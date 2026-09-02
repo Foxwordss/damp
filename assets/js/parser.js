@@ -185,6 +185,24 @@ function formatarValorMonetario(numero) {
   return `${parteInteira.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${parteDecimal}`;
 }
 
+// Regex do "corpo" de um valor monetário no texto do OCR — bem tolerante de propósito, porque o
+// separador de milhar sai errado do OCR com frequência (ponto, vírgula E até hífen — já vimos o
+// Tesseract imprimir "280-000.00" para "280.000,00"). Aceita qualquer sequência de dígitos separada
+// por ".", "," ou "-", com ou sem "R$" na frente.
+const REGEX_CORPO_VALOR_MONETARIO = /R?\$?\s*(\d[\d.,-]{3,17}\d)/;
+
+// Extrai um valor monetário de um trecho de texto de OCR e devolve tanto o número (pra contas)
+// quanto o texto já no formato "1.234,56" (pro campo da DAMP) — ignora qualquer separador que não
+// seja dígito e assume sempre os 2 últimos dígitos como centavos (é como o Espelho sempre formata).
+function normalizarValorMonetarioOCR(textoBruto) {
+  if (!textoBruto) return null;
+  const digitos = textoBruto.replace(/\D/g, '');
+  if (digitos.length < 3) return null; // precisa de pelo menos 1 dígito de real + 2 de centavos
+  const numero = Number(`${digitos.slice(0, -2)}.${digitos.slice(-2)}`);
+  if (!Number.isFinite(numero)) return null;
+  return { numero, texto: formatarValorMonetario(numero) };
+}
+
 // Calcula o Valor Compra e Venda a partir de dois campos numéricos independentes e menores
 // (Valor Financiamento Negociado, Cota de Financiamento Calculada em %) — usa a mesma relação que
 // a própria SIOPI usa pra gerar a Cota: Financiamento = Cota% × Compra e Venda. Serve de conferência
@@ -192,10 +210,10 @@ function formatarValorMonetario(numero) {
 // por isso o mais fácil de o OCR errar 1 dígito sem se notar).
 function calcularValorCompraEVendaPelaCota(valorFinanciamentoTexto, cotaTexto) {
   if (!valorFinanciamentoTexto || !cotaTexto) return null;
-  const financiamento = Number(valorFinanciamentoTexto.replace(/\./g, '').replace(',', '.'));
+  const financiamentoNormalizado = normalizarValorMonetarioOCR(valorFinanciamentoTexto);
   const cota = Number(cotaTexto.replace(',', '.')) / 100;
-  if (!Number.isFinite(financiamento) || !Number.isFinite(cota) || financiamento <= 0 || cota <= 0) return null;
-  return financiamento / cota;
+  if (!financiamentoNormalizado || !Number.isFinite(cota) || financiamentoNormalizado.numero <= 0 || cota <= 0) return null;
+  return financiamentoNormalizado.numero / cota;
 }
 
 const CAMPOS_REGRA_FIXA = [
@@ -443,17 +461,17 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
       // de propósito, em vez de preencher com o valor errado).
       const rotuloCompraEVenda = /Valor\s+Compra\s+e\s+Venda\s+ou\s+Or[çc]amento\s+Proposto\s+pelo\s+Cliente\s*:?/i;
       const matchRotulo = rotuloCompraEVenda.exec(texto);
+      let valorLidoDireto = null;
       if (matchRotulo) {
         const janela = texto.slice(matchRotulo.index + matchRotulo[0].length, matchRotulo.index + matchRotulo[0].length + 40);
-        const valorMatch = janela.match(/R?\$?\s*(\d[\d.,]{3,17}\d)/);
+        const valorMatch = janela.match(REGEX_CORPO_VALOR_MONETARIO);
         const antesDoValor = valorMatch ? janela.slice(0, valorMatch.index) : '';
         if (valorMatch && !/Financiamento/i.test(antesDoValor)) {
-          // Normaliza pro formato "1.234,56": remove tudo que não é dígito nem separador, garante
-          // que os 2 últimos dígitos viram a parte decimal (","), e o resto vira separador de milhar (".").
-          const digitosEDecimais = valorMatch[1].replace(/[.,]/g, '');
-          const parteInteira = digitosEDecimais.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-          const parteDecimal = digitosEDecimais.slice(-2);
-          encontrados[modalidadeEncontrada.valor] = `${parteInteira || '0'},${parteDecimal}`;
+          const valorNormalizado = normalizarValorMonetarioOCR(valorMatch[1]);
+          if (valorNormalizado) {
+            encontrados[modalidadeEncontrada.valor] = valorNormalizado.texto;
+            valorLidoDireto = valorNormalizado.numero;
+          }
         }
       }
 
@@ -462,14 +480,12 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
       // Calculada (%) × Valor Compra e Venda. São 2 números MENORES e mais fáceis do OCR acertar
       // (financiamento e a cota em %) — se o valor calculado por eles divergir muito do valor lido
       // direto acima, o dígito errado quase sempre está no valor de compra e venda (é o maior número
-      // da tabela, ex.: OCR trocando "365.000,00" por "285.000,00"), então o valor calculado prevalece.
-      const valorFinanciamentoTexto = buscarAposRotulo(texto, 'Valor\\s+Financiamento\\s+Negociado\\s*:?', /R?\$?\s*(\d[\d.,]{3,17}\d)/, 40);
+      // da tabela, ex.: OCR trocando "365.000,00" por "285.000,00", ou até embaralhando o separador
+      // de milhar num hífen, "280-000.00"), então o valor calculado prevalece.
+      const valorFinanciamentoTexto = buscarAposRotulo(texto, 'Valor\\s+Financiamento\\s+Negociado\\s*:?', REGEX_CORPO_VALOR_MONETARIO, 40);
       const cotaFinanciamentoTexto = buscarAposRotulo(texto, 'Cota\\s+de\\s+Financiamento\\s+Calculada\\s*:?', /(\d{1,3}(?:[.,]\d{1,4})?)\s*%/, 40);
       const valorCalculadoCompraEVenda = calcularValorCompraEVendaPelaCota(valorFinanciamentoTexto, cotaFinanciamentoTexto);
       if (valorCalculadoCompraEVenda) {
-        const valorLidoDireto = encontrados[modalidadeEncontrada.valor]
-          ? Number(encontrados[modalidadeEncontrada.valor].replace(/\./g, '').replace(',', '.'))
-          : null;
         const divergeDoCalculado = valorLidoDireto === null
           || Math.abs(valorCalculadoCompraEVenda - valorLidoDireto) / valorCalculadoCompraEVenda > 0.02; // >2% de diferença
         if (divergeDoCalculado) {

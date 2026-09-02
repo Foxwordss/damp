@@ -12,7 +12,7 @@
 // O "?v=" abaixo é um carimbo de versão: sempre que parser.js é atualizado, o número muda
 // propositalmente pra forçar o navegador (e o cache do GitHub Pages/CDN) a buscar o arquivo novo
 // em vez de servir uma cópia antiga em cache.
-import { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA, GRUPOS_EXCLUSIVOS } from './parser.js?v=20260901-2';
+import { analisarFilaDeArquivos, CAMPOS_REGRA_FIXA, GRUPOS_EXCLUSIVOS } from './parser.js?v=20260901-3';
 
 // -------------------------------------------------------------------------------------------
 // FILA DE DOCUMENTOS: acumula arquivos anexados em momentos diferentes (nunca substitui a
