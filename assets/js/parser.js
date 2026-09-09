@@ -288,6 +288,44 @@ const REGEX_SECAO_POR_PARTICIPANTE = {
   coobrigado: /\d+(?:\.\d+)*\s*-\s*Dados\s+do\s+Participante\s*-\s*Coobrigado\s*\/?\s*Proponente/i,
 };
 
+// Posição (0-based) de cada participante entre os blocos "Dados do Participante" do Espelho, na
+// ordem em que aparecem no documento. Usado como FALLBACK quando o rótulo específico do
+// participante (REGEX_SECAO_POR_PARTICIPANTE) não bate — é a única forma de achar o 3º/4º
+// Proponente, já que o Espelho não tem um rótulo fixo conhecido pra eles (pode repetir
+// "Coobrigado/Proponente", usar "Cônjuge", "Interveniente" etc. dependendo do caso).
+const ORDEM_PARTICIPANTE = { principal: 0, coobrigado: 1, terceiro: 2, quarto: 3 };
+
+// Casa qualquer cabeçalho "N.N - Dados do Participante - <rótulo qualquer>", independente do
+// rótulo, pra poder contar/localizar o participante pela ORDEM em que aparece no documento.
+const REGEX_CABECALHO_QUALQUER_PARTICIPANTE = /\d+(?:\.\d+)*\s*-\s*Dados\s+do\s+Participante\s*-\s*[^\n]*/gi;
+
+// Fatia a seção de dados pessoais do participante na posição `ordem` (0 = 1º Proponente, 1 = 2º,
+// 2 = 3º, 3 = 4º...), contando os cabeçalhos "Dados do Participante" em ordem de aparição no
+// texto. Termina no próximo cabeçalho de participante, na seção "3 - IMÓVEL", ou depois de
+// `tamanhoMaxSemFim` caracteres, o que vier primeiro.
+function fatiaSecaoParticipantePorOrdem(texto, ordem, tamanhoMaxSemFim = 2500) {
+  const cabecalhos = [];
+  const re = new RegExp(REGEX_CABECALHO_QUALQUER_PARTICIPANTE);
+  let match;
+  while ((match = re.exec(texto)) !== null) {
+    cabecalhos.push(match.index);
+    if (re.lastIndex === match.index) re.lastIndex += 1;
+  }
+
+  if (ordem >= cabecalhos.length) return null;
+
+  const inicio = cabecalhos[ordem];
+  const restante = texto.slice(inicio);
+
+  const proximoCabecalho = ordem + 1 < cabecalhos.length ? cabecalhos[ordem + 1] - inicio : -1;
+  const fimImovel = restante.slice(1).search(/3\s*-\s*IM[ÓO]VEL\b/i);
+  const candidatos = [proximoCabecalho, fimImovel === -1 ? -1 : fimImovel + 1, tamanhoMaxSemFim].filter(
+    (n) => n > 0,
+  );
+  const fim = candidatos.length ? Math.min(...candidatos) : tamanhoMaxSemFim;
+  return restante.slice(0, fim);
+}
+
 // participante: 'principal' (1º Proponente/Comprador) ou 'coobrigado' (2º Proponente) — controla
 // de qual bloco de participante os dados pessoais (CPF, Nome, Estado Civil, Endereço, Profissão,
 // FGTS) são lidos. Os campos que são da PROPOSTA em si (modalidade, valor, enquadramento, imóvel)
@@ -319,16 +357,26 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     }
   }
 
-  // ---- Bloco de dados pessoais do participante selecionado (1º ou 2º Proponente) ----
+  // ---- Bloco de dados pessoais do participante selecionado (1º, 2º, 3º ou 4º Proponente) ----
   // Usado como FALLBACK de CPF/Nome/Data do 1º Proponente (caso a seção 1 não tenha sido lida
-  // pelo OCR), e como fonte ÚNICA de tudo isso pro 2º Proponente/Coobrigado, além de Estado Civil
+  // pelo OCR), e como fonte ÚNICA de tudo isso pro 2º/3º/4º Proponente, além de Estado Civil
   // e Endereço (residência), que não aparecem rotulados "do Proponente" na seção 1 pra ninguém.
-  const regexSecaoParticipante = REGEX_SECAO_POR_PARTICIPANTE[participante] || REGEX_SECAO_POR_PARTICIPANTE.principal;
-  const secaoProponente = fatiaSecao(
-    texto,
-    regexSecaoParticipante,
-    /3\s*-\s*IM[ÓO]VEL\b/i,
-  );
+  //
+  // Pro 1º e 2º Proponente, tenta primeiro o rótulo específico conhecido ("Proponente/Comprador"
+  // e "Coobrigado/Proponente" respectivamente — mais preciso quando bate). O 3º e 4º Proponente
+  // não têm rótulo fixo conhecido no Espelho (varia: pode repetir "Coobrigado/Proponente", usar
+  // "Cônjuge do Coobrigado", "Interveniente" etc.), então usam direto a busca por ORDEM de
+  // aparição dos blocos "Dados do Participante" no documento. Se o rótulo específico não bater
+  // (ou pro 3º/4º, que não têm um pra tentar), cai pra essa mesma busca por ordem.
+  const regexSecaoParticipante = REGEX_SECAO_POR_PARTICIPANTE[participante];
+  let secaoProponente = regexSecaoParticipante
+    ? fatiaSecao(texto, regexSecaoParticipante, /3\s*-\s*IM[ÓO]VEL\b/i)
+    : null;
+
+  if (!secaoProponente) {
+    const ordemParticipante = ORDEM_PARTICIPANTE[participante] ?? ORDEM_PARTICIPANTE.principal;
+    secaoProponente = fatiaSecaoParticipantePorOrdem(texto, ordemParticipante);
+  }
 
   if (secaoProponente) {
     if (!encontrados.text_cpf) {
