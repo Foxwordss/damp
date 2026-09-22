@@ -276,6 +276,40 @@ const MODALIDADES_ESPELHO = [
   { chk: 'chkmodalidade7', valor: 'text_enquad7', regex: /Material\s+de\s+Constru[çc][ãa]o/i },
 ];
 
+// ---- Fallback pra layout de tabela do imóvel (3.2) "embaralhado" pelo OCR ----
+// Em alguns Espelhos, o Tesseract lê a mini-tabela de "3.2 - Dados do Imóvel" com TODOS os rótulos
+// em sequência (CEP: / Logradouro: / Número: / Bairro: / UF:) sem valor nenhum entre eles, e só
+// bem mais adiante no texto vêm os valores correspondentes — mas SEMPRE na MESMA ORDEM dos
+// rótulos (confirmado pelo usuário: a ordem e a posição no Espelho são sempre as mesmas nesse tipo
+// de proposta). A busca normal por proximidade rótulo->valor não alcança isso (o valor fica muito
+// longe do rótulo pra qualquer janela de busca razoável), então esse fallback casa os rótulos em
+// sequência e pega os primeiros valores "de verdade" que aparecem depois, na mesma ordem.
+const REGEX_CLUSTER_ROTULOS_IMOVEL = /CEP\s*:?\s*\n+\s*Logradouro\s*:?\s*\n+\s*N[uú]mero\s*:?\s*\n+\s*Bairro\s*:?\s*\n+\s*UF\s*:?/i;
+
+// Retorna { cepValor, logradouroValor, bairroValor } lidos pela ORDEM (não pela proximidade) logo
+// depois do cluster de rótulos, ou null se o cluster não foi encontrado ou não achou valores
+// suficientes. Ignora linhas que ainda são rótulo (terminam em ":", ex.: "Optante Selo Casa
+// Azul:") e cabeçalhos de subseção (ex.: "3.3 - Áreas(m?)") que aparecem no meio do bloco de
+// valores, antes dos valores de verdade começarem.
+function extrairValoresClusterImovel(secaoImovel) {
+  const match = REGEX_CLUSTER_ROTULOS_IMOVEL.exec(secaoImovel);
+  if (!match) return null;
+
+  const linhasValidas = secaoImovel
+    .slice(match.index + match[0].length)
+    .split('\n')
+    .map((linha) => linha.trim())
+    // O filtro de cabeçalho de subseção exige espaço dos dois lados do "-" (ex.: "3.3 - Áreas(m?)")
+    // pra não confundir com um CEP tipo "74.394-425" (dígitos-ponto-dígitos-hífen-dígitos, sem
+    // espaço nenhum ao redor do hífen).
+    .filter((linha) => linha && !/:\s*$/.test(linha) && !/^\d+(?:\.\d+)*\s+-\s+/.test(linha));
+
+  // Ordem esperada: CEP, Logradouro, Número (descartado — regra do "0" cobre isso), Bairro.
+  const [cepValor, logradouroValor, , bairroValor] = linhasValidas;
+  if (!cepValor || !logradouroValor || !bairroValor) return null;
+  return { cepValor, logradouroValor, bairroValor };
+}
+
 // Regex que localiza o início do bloco de dados pessoais de cada participante, por tipo. O
 // NÚMERO da seção varia de Espelho pra Espelho (2.4 quando tem Responsável Técnico/Vendedor/
 // Construtor antes dela — imóvel novo; 2.1 quando não tem — imóvel usado), então nenhum dos dois
@@ -461,17 +495,45 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
 
     if (secaoImovel) {
       const tipoLogradouro = buscarAposRotulo(secaoImovel, 'Tipo\\s+de\\s+Logradouro\\s*:?', /([A-ZÀ-Ü]{2,15})/);
-      const logradouro = buscarAposRotulo(secaoImovel, '(?<!Tipo\\s+de\\s+)Logradouro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
+      // Guarda usada nos campos de texto do endereço (Logradouro, Bairro, Complemento) pra impedir
+      // que o valor capturado "atravesse" pro rótulo do CAMPO SEGUINTE do formulário (ex.: Bairro
+      // grudado sem quebra clara em "Município:" no texto OCR) — sem essa guarda, o valor sai com
+      // um pedaço do próximo rótulo colado no final (ex.: "...VISTA III                    M", o
+      // "M" sendo o começo de "Município" que sobrou dentro da mesma captura).
+      // A guarda vale também pro PRIMEIRO caractere (não só os seguintes) — assim, se o texto logo
+      // depois do rótulo já É outro rótulo (caso do Espelho com layout de tabela/coluna, onde o OCR
+      // às vezes lê todos os rótulos em sequência e só bem mais adiante os valores), a busca não
+      // captura nem uma letra dele: prefere não achar nada a achar um valor errado.
+      const naoRotuloSeguinte = '(?!\\s*(?:Tipo\\s+de\\s+Logradouro|Logradouro|N[uú]mero|Complemento|Bairro|Munic[íi]pio|UF|CEP|Optante\\s+Selo\\s+Casa\\s+Azul|Optante|Selo|Casa\\s+Azul)\\b)';
+      const regexValorLogradouro = new RegExp(`(?:${naoRotuloSeguinte}[A-ZÀ-Ü0-9 ]){4,60}`);
+      const regexValorBairro = new RegExp(`(?:${naoRotuloSeguinte}[A-ZÀ-Ü0-9 ]){4,60}`);
+      const regexValorComplemento = new RegExp(`(?:${naoRotuloSeguinte}[A-Za-zÀ-ÿ0-9,.º° ]){4,60}`);
+      let logradouro = buscarAposRotulo(secaoImovel, '(?<!Tipo\\s+de\\s+)Logradouro\\s*:?', regexValorLogradouro);
       const numero = buscarAposRotulo(secaoImovel, 'N[uú]mero\\s*:?', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
-      const complemento = buscarAposRotulo(secaoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
-      const bairroImovel = buscarAposRotulo(secaoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
+      const complemento = buscarAposRotulo(secaoImovel, 'Complemento\\s*:?', regexValorComplemento);
+      let bairroImovel = buscarAposRotulo(secaoImovel, 'Bairro\\s*:?', regexValorBairro);
       const municipioImovel = buscarAposRotulo(secaoImovel, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
       // CEP: aceita com ou sem hífen/ponto ("74000-000", "74000000" ou, como o Espelho às vezes
       // formata, "74.000-000" com ponto de milhar no meio) — normaliza tudo pro padrão "00000-000".
-      const cep = buscarAposRotulo(secaoImovel, 'CEP\\s*:?', /(\d{2}\.?\d{3}-?\d{3})/, 30);
+      let cep = buscarAposRotulo(secaoImovel, 'CEP\\s*:?', /(\d{2}\.?\d{3}-?\d{3})/, 30);
+
+      // Nenhum dos três achou por proximidade? Tenta o fallback do cluster de rótulos embaralhado
+      // (ver extrairValoresClusterImovel) — só entra aqui quando a busca normal falhou nos três,
+      // que é justamente a assinatura desse layout embaralhado (rótulo e valor sempre longe demais).
+      if (!logradouro && !bairroImovel && !cep) {
+        const clusterValores = extrairValoresClusterImovel(secaoImovel);
+        if (clusterValores) {
+          logradouro = clusterValores.logradouroValor;
+          bairroImovel = clusterValores.bairroValor;
+          cep = clusterValores.cepValor;
+        }
+      }
+
       const cepFormatado = cep ? cep.replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2') : null;
 
-      const numeroFormatado = numero && /^S\s?\/?\s?N$/i.test(numero) ? 'SN' : numero;
+      // Quando o Espelho não traz (ou o OCR não conseguiu ler) o Número do imóvel, usa "0" — valor
+      // padrão pedido pelo usuário, já que boa parte dos Espelhos reais realmente vem com Número: 0.
+      const numeroFormatado = !numero ? '0' : /^S\s?\/?\s?N$/i.test(numero) ? 'SN' : numero;
       const logradouroCompleto = [tipoLogradouro, logradouro].filter(Boolean).join(' ') || logradouro;
 
       // UF do imóvel é sempre "GO" (regra de negócio pedida pelo usuário, não extraída do Espelho)
@@ -651,7 +713,12 @@ function extrairCamposDoTexto(texto) {
     const tipoLogradouroImovel = buscarAposRotulo(blocoImovel, 'Tipo\\s+de\\s+Logradouro\\s*:?', /([A-ZÀ-Ü]{2,20})/);
     const logradouroImovel = buscarAposRotulo(blocoImovel, '(?<!Tipo\\s+de\\s+)Logradouro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
     const numeroImovelBruto = buscarAposRotulo(blocoImovel, 'N[uú]mero(?!\\s+d[oa])\\s*:?\\s*', /(S\s?\/?\s?N\b|\d{1,6})/i, 15);
-    const numeroImovel = numeroImovelBruto && /^S\s?\/?\s?N$/i.test(numeroImovelBruto) ? 'SN' : numeroImovelBruto;
+    // Mesma regra do Espelho: sem Número lido, usa "0" (valor padrão pedido pelo usuário).
+    const numeroImovel = !numeroImovelBruto
+      ? '0'
+      : /^S\s?\/?\s?N$/i.test(numeroImovelBruto)
+        ? 'SN'
+        : numeroImovelBruto;
     const complementoImovel = buscarAposRotulo(blocoImovel, 'Complemento\\s*:?', /([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9,.º° ]{1,60})/);
     const bairroImovel = buscarAposRotulo(blocoImovel, 'Bairro\\s*:?', /([A-ZÀ-Ü0-9][A-ZÀ-Ü0-9 ]{1,60})/);
     const matchMunicipioUFImovel = blocoImovel.match(/Munic[íi]pio\s*-\s*UF\s*:?\s*([A-ZÀ-Ü][A-ZÀ-Ü ]*?)\s*-\s*([A-Z]{2})\b/i);
