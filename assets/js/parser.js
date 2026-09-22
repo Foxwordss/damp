@@ -491,8 +491,8 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     // branco — o \b no INÍCIO do valor (não só no fim) evita que a varredura da janela capture 2
     // letras no meio de outra palavra à frente (ex.: "IS" dentro de "PIS/PASEP").
     const ufProponente = buscarAposRotulo(secaoProponente, '\\bUF(?!\\s*Emissora)\\s*:?', /\b([A-Z]{2})\b/, 40);
-    if (municipioProponente) encontrados.text_logradouro = municipioProponente;
-    if (ufProponente) encontrados.text_uf1 = ufProponente;
+    // Município/UF do bloco "Endereço" do participante NÃO preenchem mais a residência
+    // (text_logradouro/text_uf1) — só servem de fallback pro município/UF da ocupação, abaixo.
 
     // ---- 2 - SITUAÇÃO OCUPACIONAL ----
     // Sempre marca a opção "Sou [profissão]..." (chkocupacao1) usando a Profissão do próprio
@@ -712,12 +712,9 @@ function extrairCamposDoTexto(texto) {
     encontrados.text_uf1 = matchMunicipioUF[2].trim().toUpperCase();
   }
 
-  // Tempo de residência ("há X anos e Y meses")
-  const tempoResidencia = texto.match(/h[áa]\s*(\d{1,2})\s*anos?\s*e\s*(\d{1,2})\s*meses?/i);
-  if (tempoResidencia) {
-    encontrados.text_compl1 = tempoResidencia[1].padStart(2, '0');
-    encontrados.text_compl2 = tempoResidencia[2].padStart(2, '0');
-  }
+  // Tempo de residência: sempre fixo em 05 anos e 05 meses (regra de negócio), não lê do documento.
+  encontrados.text_compl1 = '05';
+  encontrados.text_compl2 = '05';
 
   // Item 2 - SITUAÇÃO OCUPACIONAL
   // Formato sempre "<código> - <OCUPAÇÃO>" (ex.: "0000000303 - GERENTE"). Pega o trecho depois do
