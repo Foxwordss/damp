@@ -487,8 +487,10 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     // células separadas (não necessariamente na mesma linha do texto após OCR).
     const municipioProponente = buscarAposRotulo(secaoProponente, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
     // (?!\s*Emissora) evita casar com "UF Emissora:" (UF de emissão do documento, ex.: CNH emitida
-    // em outro estado) — sem isso "UF Emissora: MT" era lido como se fosse a UF de residência.
-    const ufProponente = buscarAposRotulo(secaoProponente, '\\bUF(?!\\s*Emissora)\\s*:?', /([A-Z]{2})\b/, 40);
+    // em outro estado). O "UF:" da Carteira de Trabalho também bate nesse rótulo e costuma vir em
+    // branco — o \b no INÍCIO do valor (não só no fim) evita que a varredura da janela capture 2
+    // letras no meio de outra palavra à frente (ex.: "IS" dentro de "PIS/PASEP").
+    const ufProponente = buscarAposRotulo(secaoProponente, '\\bUF(?!\\s*Emissora)\\s*:?', /\b([A-Z]{2})\b/, 40);
     if (municipioProponente) encontrados.text_logradouro = municipioProponente;
     if (ufProponente) encontrados.text_uf1 = ufProponente;
 
