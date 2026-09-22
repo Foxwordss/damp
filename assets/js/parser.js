@@ -251,11 +251,13 @@ function textoEhCertidaoCasamento(texto) {
 function extrairCamposDaCertidaoCasamento(texto) {
   const encontrados = {};
 
-  // Tabela "Dia Mês Ano" com os três números logo em seguida (ex.: "12 12 2020").
-  const indiceCabecalho = texto.search(/Dia\s+M[êe]s\s+Ano/i);
-  if (indiceCabecalho !== -1) {
-    const janela = texto.slice(indiceCabecalho, indiceCabecalho + 100);
-    const matchData = janela.match(/(\d{1,2})\D{1,15}(\d{1,2})\D{1,15}(\d{4})/);
+  // Ancora em "Registro do Casamento" (rótulo sempre presente, único no documento) em vez do
+  // cabeçalho "Dia Mês Ano" — esse cabeçalho pode aparecer 2x (celebração/registro) e o OCR nem
+  // sempre lê a tabela na ordem cabeçalho-depois-valor, então a janela podia não pegar os números.
+  const indiceRotulo = texto.search(/Registro\s+do\s+Casamento/i);
+  if (indiceRotulo !== -1) {
+    const janela = texto.slice(indiceRotulo, indiceRotulo + 200);
+    const matchData = janela.match(/\b([0-3]?\d)\D{1,10}([01]?\d)\D{1,10}(\d{4})\b/);
     if (matchData) {
       const [, dia, mes, ano] = matchData;
       encontrados.text_data2 = `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${ano}`;
@@ -495,8 +497,8 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     // branco — o \b no INÍCIO do valor (não só no fim) evita que a varredura da janela capture 2
     // letras no meio de outra palavra à frente (ex.: "IS" dentro de "PIS/PASEP").
     const ufProponente = buscarAposRotulo(secaoProponente, '\\bUF(?!\\s*Emissora)\\s*:?', /\b([A-Z]{2})\b/, 40);
-    // Município/UF do bloco "Endereço" do participante NÃO preenchem mais a residência
-    // (text_logradouro/text_uf1) — só servem de fallback pro município/UF da ocupação, abaixo.
+    if (municipioProponente) encontrados.text_logradouro = municipioProponente;
+    if (ufProponente) encontrados.text_uf1 = ufProponente;
 
     // ---- 2 - SITUAÇÃO OCUPACIONAL ----
     // Sempre marca a opção "Sou [ocupação]..." (chkocupacao1) usando o campo "Ocupação:" do
@@ -506,9 +508,12 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     // ex.: "SECRETARIO ESTENOGRAFO DATILOGRAFO RECEPCIONISTA..."), não um cargo único.
     // Usa o mesmo município/UF de residência como município da ocupação principal (o Espelho não
     // traz um endereço de trabalho separado).
-    const ocupacaoBruta = buscarBlocoAposRotulo(secaoProponente, '(?<!Tipo\\s+de\\s+)Ocupa[cç][aã]o\\s*:?', 60);
+    const ocupacaoBruta = buscarBlocoAposRotulo(secaoProponente, '(?<!Tipo\\s+de\\s+)Ocupa[cç][aã]o\\s*:?', 100);
+    // Remove só o código antes do PRIMEIRO traço — mantém o nome COMPLETO mesmo que ele mesmo
+    // tenha hífen (ex.: "0000187717 - AUXILIAR DE ESCRITÓRIO - NÍVEL I" -> nome completo, não só
+    // o último pedaço).
     const ocupacaoProponente = ocupacaoBruta
-      ? (ocupacaoBruta.split(/[-–—]/).pop() || ocupacaoBruta).trim()
+      ? ocupacaoBruta.replace(/^[^-–—]*[-–—]\s*/, '').trim() || ocupacaoBruta
       : ocupacaoBruta;
     if (ocupacaoProponente) {
       encontrados.chkocupacao1 = true;
@@ -732,8 +737,10 @@ function extrairCamposDoTexto(texto) {
   // ÚLTIMO separador "-"/"–"/"—", que é sempre o nome da ocupação (mais robusto do que só remover
   // dígitos do início, já que o OCR às vezes lê algum dígito do código como letra).
   const tipoOcupacaoBruto = buscarBlocoAposRotulo(texto, 'Tipo\\s+de\\s+Ocupa[cç][aã]o\\s*:?');
+  // Remove só o código antes do PRIMEIRO traço — mantém o nome COMPLETO mesmo que ele mesmo tenha
+  // hífen.
   const tipoOcupacao = tipoOcupacaoBruto
-    ? (tipoOcupacaoBruto.split(/[-–—]/).pop() || tipoOcupacaoBruto).trim()
+    ? tipoOcupacaoBruto.replace(/^[^-–—]*[-–—]\s*/, '').trim() || tipoOcupacaoBruto
     : tipoOcupacaoBruto;
   if (tipoOcupacao) {
     encontrados.chkocupacao1 = true;
