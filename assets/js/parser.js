@@ -453,6 +453,10 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
       if (dataNascimento) encontrados.text_data1 = dataNascimento;
     }
 
+    // PIS/PASEP: o Espelho traz no bloco "Carteira de Trabalho" do próprio participante.
+    const pisProponente = buscarAposRotulo(secaoProponente, 'PIS\\s*\\/\\s*PASEP\\s*:?', /(\d{3}\.?\d{5}\.?\d{2}-?\d{1})/);
+    if (pisProponente) encontrados.text_pis = pisProponente;
+
     const estadoCivilEncontrado = MAPA_ESTADO_CIVIL_ESPELHO.find(({ regex }) => {
       // Colon obrigatório logo após "Civil" — evita casar com o rótulo vizinho "Estado Civil
       // SICLI:" (que tem "SICLI" entre "Civil" e o ":", então não bate aqui).
@@ -495,13 +499,20 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     // (text_logradouro/text_uf1) — só servem de fallback pro município/UF da ocupação, abaixo.
 
     // ---- 2 - SITUAÇÃO OCUPACIONAL ----
-    // Sempre marca a opção "Sou [profissão]..." (chkocupacao1) usando a Profissão do próprio
-    // proponente, e usa o mesmo município/UF de residência como município da ocupação principal
-    // (o Espelho não traz um endereço de trabalho separado).
-    const profissaoProponente = buscarAposRotulo(secaoProponente, 'Profiss[ãa]o\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 80);
-    if (profissaoProponente) {
+    // Sempre marca a opção "Sou [ocupação]..." (chkocupacao1) usando o campo "Ocupação:" do
+    // próprio proponente (formato "<código> - <CARGO>", ex.: "0000187717 - COZINHEIRO(A)") — pega
+    // o trecho depois do ÚLTIMO separador "-"/"–"/"—", igual ao "Tipo de Ocupação:" do cadastro
+    // CAIXA. NÃO usa "Profissão:", que no Espelho é uma lista CBO composta (vários cargos juntos,
+    // ex.: "SECRETARIO ESTENOGRAFO DATILOGRAFO RECEPCIONISTA..."), não um cargo único.
+    // Usa o mesmo município/UF de residência como município da ocupação principal (o Espelho não
+    // traz um endereço de trabalho separado).
+    const ocupacaoBruta = buscarBlocoAposRotulo(secaoProponente, '(?<!Tipo\\s+de\\s+)Ocupa[cç][aã]o\\s*:?', 60);
+    const ocupacaoProponente = ocupacaoBruta
+      ? (ocupacaoBruta.split(/[-–—]/).pop() || ocupacaoBruta).trim()
+      : ocupacaoBruta;
+    if (ocupacaoProponente) {
       encontrados.chkocupacao1 = true;
-      encontrados.text_ocupacao = profissaoProponente;
+      encontrados.text_ocupacao = ocupacaoProponente;
       if (municipioProponente) encontrados.text_localocupa = municipioProponente;
       if (ufProponente) encontrados.text_uf0 = ufProponente;
     }
