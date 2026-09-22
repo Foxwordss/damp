@@ -240,6 +240,31 @@ function textoEhEspelhoDaProposta(texto) {
     || /SIOPI\s*-\s*Opera[çc][õo]es\s+Imobili[áa]rias/i.test(texto);
 }
 
+// -------------------------------------------------------------------------------------------
+// CERTIDÃO DE CASAMENTO — usada só para a data de registro do casamento (Item 1 da DAMP, campo
+// "desde 00/00/0000" do regime de bens = text_data2). Nenhum outro campo do documento é lido.
+// -------------------------------------------------------------------------------------------
+function textoEhCertidaoCasamento(texto) {
+  return /CERTID[ÃA]O\s+DE\s+CASAMENTO/i.test(texto);
+}
+
+function extrairCamposDaCertidaoCasamento(texto) {
+  const encontrados = {};
+
+  // Tabela "Dia Mês Ano" com os três números logo em seguida (ex.: "12 12 2020").
+  const indiceCabecalho = texto.search(/Dia\s+M[êe]s\s+Ano/i);
+  if (indiceCabecalho !== -1) {
+    const janela = texto.slice(indiceCabecalho, indiceCabecalho + 100);
+    const matchData = janela.match(/(\d{1,2})\D{1,15}(\d{1,2})\D{1,15}(\d{4})/);
+    if (matchData) {
+      const [, dia, mes, ano] = matchData;
+      encontrados.text_data2 = `${dia.padStart(2, '0')}/${mes.padStart(2, '0')}/${ano}`;
+    }
+  }
+
+  return { encontrados, secoesRendaEAgenciaEncontradas: false };
+}
+
 const MAPA_ESTADO_CIVIL_ESPELHO = [
   { valor: 'casado', regex: /CASADO/i },
   { valor: 'solteiro', regex: /SOLTEIRO/i },
@@ -902,9 +927,14 @@ async function analisarArquivo(arquivo, aoProgredir, participante = 'principal')
 
       // O Espelho da Proposta (SIOPI) tem layout de tabela rótulo/valor e rótulos repetidos por
       // participante — usa extrator dedicado em vez do genérico (texto corrido de RG/CTPS/cadastro).
-      const resultadoParcial = textoEhEspelhoDaProposta(textoAcumulado)
-        ? extrairCamposDoEspelho(textoAcumulado, participante)
-        : extrairCamposDoTexto(textoAcumulado);
+      let resultadoParcial;
+      if (textoEhEspelhoDaProposta(textoAcumulado)) {
+        resultadoParcial = extrairCamposDoEspelho(textoAcumulado, participante);
+      } else if (textoEhCertidaoCasamento(textoAcumulado)) {
+        resultadoParcial = extrairCamposDaCertidaoCasamento(textoAcumulado);
+      } else {
+        resultadoParcial = extrairCamposDoTexto(textoAcumulado);
+      }
       encontrados = resultadoParcial.encontrados;
 
       const podeParar = CAMPOS_PARADA_ANTECIPADA.every((campo) => encontrados[campo])
