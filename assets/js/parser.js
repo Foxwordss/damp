@@ -691,7 +691,13 @@ function extrairCamposDoTexto(texto) {
   }
 
   // Item 2 - SITUAÇÃO OCUPACIONAL
-  const tipoOcupacao = buscarBlocoAposRotulo(texto, 'Tipo\\s+de\\s+Ocupa[cç][aã]o\\s*:?');
+  // Formato sempre "<código> - <OCUPAÇÃO>" (ex.: "0000000303 - GERENTE"). Pega o trecho depois do
+  // ÚLTIMO separador "-"/"–"/"—", que é sempre o nome da ocupação (mais robusto do que só remover
+  // dígitos do início, já que o OCR às vezes lê algum dígito do código como letra).
+  const tipoOcupacaoBruto = buscarBlocoAposRotulo(texto, 'Tipo\\s+de\\s+Ocupa[cç][aã]o\\s*:?');
+  const tipoOcupacao = tipoOcupacaoBruto
+    ? (tipoOcupacaoBruto.split(/[-–—]/).pop() || tipoOcupacaoBruto).trim()
+    : tipoOcupacaoBruto;
   if (tipoOcupacao) {
     encontrados.chkocupacao1 = true;
     encontrados.text_ocupacao = tipoOcupacao;
