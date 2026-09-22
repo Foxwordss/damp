@@ -486,7 +486,9 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     // Endereço (município/UF) do proponente — layout em tabela, rótulos "Município:"/"UF:" em
     // células separadas (não necessariamente na mesma linha do texto após OCR).
     const municipioProponente = buscarAposRotulo(secaoProponente, 'Munic[íi]pio\\s*:?', /([A-ZÀ-Ü][A-ZÀ-Ü ]{2,40})/, 120);
-    const ufProponente = buscarAposRotulo(secaoProponente, '\\bUF\\s*:?', /([A-Z]{2})\b/, 40);
+    // (?!\s*Emissora) evita casar com "UF Emissora:" (UF de emissão do documento, ex.: CNH emitida
+    // em outro estado) — sem isso "UF Emissora: MT" era lido como se fosse a UF de residência.
+    const ufProponente = buscarAposRotulo(secaoProponente, '\\bUF(?!\\s*Emissora)\\s*:?', /([A-Z]{2})\b/, 40);
     if (municipioProponente) encontrados.text_logradouro = municipioProponente;
     if (ufProponente) encontrados.text_uf1 = ufProponente;
 
