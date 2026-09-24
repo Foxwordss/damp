@@ -527,6 +527,21 @@ function extrairCamposDoEspelho(texto, participante = 'principal') {
     const possui3Anos = buscarSimNao(secaoProponente, 'Possui\\s+conta\\s+no\\s+FGTS\\s+h[áa]\\s+mais\\s+de\\s+03\\s+anos[^\\n]*?:?', 70);
     if (possui3Anos === 'sim') encontrados.sn_1 = true;
     else if (possui3Anos === 'nao') encontrados.sn_2 = true;
+
+    // Item 4 - DECLARAÇÃO DE IMPOSTO DE RENDA: o Espelho traz "Declaração de Imposto de Renda:
+    // Sim/Não" direto (sem precisar olhar documento de comprovante de renda anexado, como no
+    // cadastro CAIXA). Sim = cópia entregue (chkir2), Não = isento (chkir1), sempre com ano
+    // base/exercício vigentes.
+    const declaraIR = buscarSimNao(secaoProponente, 'Declara[çc][ãa]o\\s+de\\s+Imposto\\s+de\\s+Renda\\s*:?', 20);
+    if (declaraIR === 'sim') {
+      encontrados.chkir2 = true;
+      encontrados.text_irano2 = IR_ANO_BASE_PADRAO;
+      encontrados.text_irexerc2 = IR_ANO_EXERCICIO_PADRAO;
+    } else if (declaraIR === 'nao') {
+      encontrados.chkir1 = true;
+      encontrados.text_irano1 = IR_ANO_BASE_PADRAO;
+      encontrados.text_irexerc1 = IR_ANO_EXERCICIO_PADRAO;
+    }
   }
 
   // ---- Campos da PROPOSTA em si (imóvel, modalidade/valor, enquadramento, nº operação, local/data
